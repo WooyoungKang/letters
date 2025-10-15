@@ -4,14 +4,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cardiac ASCII Mesh — Calm↔Excited Characters, Blue→Red</title>
+  <title>Cardiac ASCII Mesh — Slow Reform, True Colors</title>
   <style>
     :root {
       --bg: #ffffff;
       --panel: #ffffff;
       --border: #e5e7eb;
       --ink: #111827;
-      --sub: #6b7280;
       --shadow: 0 8px 24px rgba(0, 0, 0, .08);
     }
 
@@ -34,98 +33,8 @@
     .app {
       height: 100dvh;
       display: grid;
-      grid-template-columns: minmax(320px, 36%) 1fr;
-      gap: 22px;
+      grid-template-columns: 1fr;
       padding: 22px;
-    }
-
-    @media (max-width:900px) {
-      .app {
-        grid-template-columns: 1fr;
-        grid-auto-rows: minmax(240px, auto)
-      }
-    }
-
-    .card {
-      height: 100%;
-      background: linear-gradient(180deg, rgba(0, 0, 0, .015), rgba(0, 0, 0, 0)), var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      box-shadow: var(--shadow);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      backdrop-filter: blur(3px);
-    }
-
-    .head {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      background: linear-gradient(180deg, rgba(0, 0, 0, .02), rgba(0, 0, 0, 0));
-    }
-
-    .title {
-      font-weight: 700;
-      letter-spacing: .2px
-    }
-
-    .cluster {
-      display: flex;
-      align-items: center;
-      gap: 10px
-    }
-
-    .badge {
-      font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas;
-      color: var(--sub)
-    }
-
-    .editor {
-      flex: 1;
-      padding: 14px 16px 16px
-    }
-
-    textarea {
-      width: 100%;
-      height: 100%;
-      resize: none;
-      border: 0;
-      outline: none;
-      color: var(--ink);
-      background: transparent;
-      font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
-    }
-
-    textarea::placeholder {
-      color: #a7b4c4
-    }
-
-    .typing .card {
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, .18), var(--shadow);
-    }
-
-    .btn {
-      appearance: none;
-      border: 1px solid var(--border);
-      background: #ffffff;
-      color: var(--ink);
-      padding: 6px 10px;
-      border-radius: 10px;
-      cursor: pointer;
-      font: 12px ui-sans-serif, system-ui;
-      transition: transform .06s ease, filter .15s ease;
-    }
-
-    .btn:hover {
-      filter: brightness(0.98)
-    }
-
-    .btn:active {
-      transform: scale(0.98)
     }
 
     .vis {
@@ -158,44 +67,90 @@
       border-radius: 999px;
       backdrop-filter: blur(8px);
     }
+
+    .toolbar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: rgba(255, 255, 255, .75);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: 999px;
+      backdrop-filter: blur(8px);
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--ink);
+      padding: 6px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      font: 12px ui-sans-serif, system-ui;
+      transition: transform .06s ease, filter .15s ease;
+    }
+
+    .btn:hover {
+      filter: brightness(0.98)
+    }
+
+    .btn:active {
+      transform: scale(0.98)
+    }
   </style>
 </head>
 
 <body>
   <main class="app" id="app">
-    <section class="card">
-      <div class="head">
-        <div class="title">Enter text:</div>
-        <div class="cluster">
-          <div class="badge" id="bpm">-- bpm</div>
-          <button id="snd" class="btn" type="button">Sound: Off</button>
-        </div>
-      </div>
-      <div class="editor">
-        <textarea id="editor" spellcheck="false" placeholder="Type faster to exercise your computer."></textarea>
-      </div>
-    </section>
     <section class="vis" id="vis">
       <canvas id="mesh"></canvas>
-      <div class="hud" id="hud">ready…</div>
+      <div class="toolbar">
+        <button id="snd" class="btn" type="button">Sound: Off</button>
+      </div>
+      <div class="hud" id="hud">type anywhere…</div>
     </section>
   </main>
 
   <script>
+    // ===== Tunables =====
     const REST_PERIOD = 4.0, FAST_PERIOD = 0.6;
     const MIN_IKI = 120, MAX_IKI = 2200, EMA_A = 0.22;
-    const IDLE_TAU = 2.8, PERIOD_TAU = 0.7;
-    const HEART_MIN = 0.45, HEART_MAX = 1.10;
 
-    const app = document.getElementById('app');
+    // Gradual slowdown
+    const IDLE_TAU = 10.0;
+    const PERIOD_TAU = 2.5;
+
+    // Heart mapping (no hard upper cap; tiny floor prevents zero)
+    const HEART_RATIO = 0.45;
+
+    // Break & reform
+    const EXPLODE_BPM = 180;
+    const EXPLODE_COOLDOWN_S = 2.0;
+
+    // Make reform MUCH slower now:
+    const REFORM_DELAY_S = 2.5;   // wait longer before it even starts
+    const REFORM_DURATION_S = 9.0;   // longer glide-in
+
+    // Extra slow drift-to-idle after explosion (until reform is done)
+    const COOL_EXTRA_TAU_S = 8.0;
+
+    // Debris & reform particles
+    const EXPLODE_PARTICLES = 420;
+    const REFORM_PARTICLES = 220;
+    const GRAVITY = 900;
+
+    // ===== DOM =====
     const vis = document.getElementById('vis');
     const cvs = document.getElementById('mesh');
     const ctx = cvs.getContext('2d', { alpha: false });
     const hud = document.getElementById('hud');
-    const bpmEl = document.getElementById('bpm');
-    const editor = document.getElementById('editor');
     const sndBtn = document.getElementById('snd');
 
+    // ===== State =====
     let lastKeyTime = 0, emaIKI = 900;
     let currentPeriod = REST_PERIOD;
     let phaseBreath = 0, phaseHeart = 0;
@@ -205,12 +160,61 @@
     const TAU = Math.PI * 2;
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
     const lmap = (v, a, b, c, d) => c + (d - c) * ((v - a) / (b - a));
+    const smoothstep = (x) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
 
     let CW = 0, CH = 0, LAT = 60, LON = 100;
     const base = [];
     const buf = document.createElement('canvas');
     const btx = buf.getContext('2d', { alpha: true });
 
+    // Typed single background glyph
+    let pendingChar = null;
+    let bgGlyph = null; // {ch,x,y,size,alpha,life,rot}
+
+    // Debris & reformers
+    let debris = [];     // {x,y,vx,vy,ch,size,color,life}
+    let reformers = [];  // {x,y,vx,vy,tx,ty,ch,size,life}
+    let lastExplodeT = -Infinity;
+    let shattered = false;
+    let shatterTime = 0;
+    let heartAlpha = 1.0;
+
+    // "Cooling" phase after explosion → slow back to idle
+    let cooling = false;
+    let coolUntil = 0;   // seconds timestamp
+
+    // Helpers
+    const easeStep = (t, a = 0.35, b = 0.90) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
+    const hueLerpShortest = (h1, h2, t) => { let d = ((h2 - h1 + 540) % 360) - 180; return (h1 + d * t + 360) % 360; };
+    function hash01(i) { const s = Math.sin(i * 12.9898) * 43758.5453; return s - Math.floor(s); }
+
+    const CALM = ["·", ".", "`", "˚", ",", "o", "0", "0", "0"];
+    const MID = ["-", "~", "=", "+", "*"];
+    const EXCIT = ["*", "!", "!", "^", "#", "%", "@"];
+
+    function pickHeartChar(intensity, excite, h) {
+      if (excite < 0.33) {
+        const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
+        return (intensity > 0.85 && h > 0.9) ? MID[Math.floor(h * MID.length)] : CALM[idxC];
+      } else if (excite < 0.66) {
+        const wC = 1.0 - (excite - 0.33) / 0.33;
+        const wM = 0.5;
+        const pick = h;
+        if (pick < wC * 0.6) {
+          const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
+          return CALM[idxC];
+        } else if (pick < wC * 0.6 + wM * 0.25 + intensity * 0.25) {
+          return MID[Math.min(MID.length - 1, Math.floor(intensity * MID.length))];
+        } else {
+          return EXCIT[Math.min(EXCIT.length - 1, Math.floor(intensity * (EXCIT.length - 1)))];
+        }
+      } else {
+        const idxE = Math.min(EXCIT.length - 1, Math.floor(intensity * (EXCIT.length - 1)));
+        return (intensity < 0.35 && h < 0.15) ? MID[Math.floor(h * MID.length)] : EXCIT[idxE];
+      }
+    }
+
+    // ===== Grid =====
     function buildGrid() {
       base.length = 0;
       let idx = 0;
@@ -223,14 +227,16 @@
       }
     }
 
+    // ===== Fit =====
+    let FONT_BASE = 16;
     function fit() {
       const r = window.devicePixelRatio || 1;
       CW = vis.clientWidth | 0; CH = vis.clientHeight | 0;
       cvs.width = CW * r; cvs.height = CH * r; ctx.setTransform(r, 0, 0, r, 0, 0);
       ctx.imageSmoothingEnabled = true;
       buf.width = CW; buf.height = CH;
-      const target = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1400 : 2200;
-      const lon = Math.max(64, Math.min(112, Math.round(Math.sqrt(target * 2))));
+      const target = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1200 : 2000;
+      const lon = Math.max(56, Math.min(110, Math.round(Math.sqrt(target * 2))));
       const lat = Math.round(lon * 0.6);
       LON = lon; LAT = lat; buildGrid();
       FONT_BASE = Math.round(Math.min(CW, CH) * 0.020);
@@ -240,25 +246,17 @@
     addEventListener('resize', fit);
     document.addEventListener('visibilitychange', () => { paused = document.hidden; });
 
-    let FONT_BASE = 16;
+    // ===== Fonts =====
     const setFontBucket = (bucket) => {
       const size = Math.round(FONT_BASE * (0.85 + 0.22 * bucket));
       btx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
     };
-
-    function markTyping() {
-      const now = performance.now();
-      if (lastKeyTime > 0) {
-        const diff = now - lastKeyTime;
-        emaIKI = (1 - EMA_A) * emaIKI + EMA_A * diff;
-      }
-      lastKeyTime = now;
-      app.classList.add('typing'); clearTimeout(markTyping._t);
-      markTyping._t = setTimeout(() => app.classList.remove('typing'), 300);
+    function setBucketFontFromF(f) {
+      const bucket = (f < 1.05) ? 0 : (f < 1.25) ? 1 : 2;
+      setFontBucket(bucket);
     }
-    document.addEventListener('keydown', markTyping);
-    editor.addEventListener('input', markTyping);
 
+    // ===== Heart signal =====
     function cardiacSeries(t) {
       const y = 0.44
         + 0.36 * Math.cos(t - 0.05)
@@ -268,6 +266,7 @@
       return Math.pow(Math.max(0, y), 1.20);
     }
 
+    // ===== Audio =====
     class AudioBus {
       constructor() { this.ctx = null; this.master = null; this.on = false; }
       async init() {
@@ -292,7 +291,7 @@
         this.timer = setInterval(() => this._tick(), this.lookAhead * 1000);
       }
       stop() { if (!this.on) return; this.on = false; clearInterval(this.timer); this.timer = null; }
-      setPeriod(p) { this.period = Math.max(0.35, Math.min(1.6, p)); }
+      setPeriod(p) { this.period = Math.max(0.03, p); } // tiny floor
       _tick() {
         const ct = this.bus.ctx.currentTime;
         while (this.nextTime < ct + this.horizon) {
@@ -309,24 +308,29 @@
         subG.gain.exponentialRampToValueAtTime(0.001, time + 0.24);
         sub.frequency.setValueAtTime(36, time);
         sub.frequency.exponentialRampToValueAtTime(30, time + 0.22);
+
         const osc = ctx.createOscillator(); osc.type = 'sine';
         const oG = ctx.createGain(); oG.gain.setValueAtTime(0, time);
         oG.gain.linearRampToValueAtTime(0.95 * amp, time + 0.006);
         oG.gain.exponentialRampToValueAtTime(0.001, time + 0.20);
         osc.frequency.setValueAtTime(90, time);
         osc.frequency.exponentialRampToValueAtTime(55, time + 0.18);
+
         const nBuf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
         const d = nBuf.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / d.length * 6);
         const noise = ctx.createBufferSource(); noise.buffer = nBuf;
         const nG = ctx.createGain(); nG.gain.setValueAtTime(0.15 * amp, time);
         nG.gain.exponentialRampToValueAtTime(0.002, time + 0.05);
+
         const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
         const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 28;
+
         sub.connect(subG).connect(lp);
         osc.connect(oG).connect(lp);
         noise.connect(nG).connect(lp);
         lp.connect(hp).connect(this.bus.master);
+
         sub.start(time); sub.stop(time + 0.28);
         osc.start(time); osc.stop(time + 0.24);
         noise.start(time); noise.stop(time + 0.06);
@@ -342,59 +346,197 @@
     window.addEventListener('pointerdown', async () => { try { await audioBus.ensureRunning(); await heartAudio.start(); sndBtn.textContent = 'Sound: On'; } catch (e) { } }, { once: true });
     window.addEventListener('keydown', async () => { try { await audioBus.ensureRunning(); await heartAudio.start(); sndBtn.textContent = 'Sound: On'; } catch (e) { } }, { once: true });
 
-    let last = performance.now(), acc = 0, STEP = 1 / 60;
-    function tick() {
-      const now = performance.now(); let dt = (now - last) / 1000; last = now;
-      if (dt > 0.2) dt = 0.2; acc += dt;
-      if (paused) { requestAnimationFrame(tick); return; }
-      while (acc >= STEP) { frame(STEP); acc -= STEP; }
-      requestAnimationFrame(tick);
+    // ===== Input (tempo + one-off background glyph) =====
+    document.addEventListener('keydown', (e) => {
+      const now = performance.now();
+      if (lastKeyTime > 0) {
+        const diff = now - lastKeyTime;
+        emaIKI = (1 - EMA_A) * emaIKI + EMA_A * diff;
+      }
+      lastKeyTime = now;
+
+      if (e.key && e.key.length === 1 && /\S/.test(e.key)) pendingChar = e.key;
+    });
+
+    // ===== Background glyph outside heart =====
+    function spawnBgGlyphOutsideHeart(ch, R, cx, cy) {
+      const size = 14 + Math.random() * 14;
+      const rot = (Math.random() - 0.5) * 0.6;
+      let x = 0, y = 0;
+      for (let i = 0; i < 16; i++) {
+        x = Math.random() * CW; y = Math.random() * CH;
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy > R * R * 1.10) break;
+      }
+      bgGlyph = { ch, x, y, size, alpha: 1.0, life: 0.8, rot };
     }
 
-    const easeStep = (t, a = 0.35, b = 0.90) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
-    const hueLerpShortest = (h1, h2, t) => { let d = ((h2 - h1 + 540) % 360) - 180; return (h1 + d * t + 360) % 360; };
-    function hash01(i) { const s = Math.sin(i * 12.9898) * 43758.5453; return s - Math.floor(s); }
+    // ===== Debris & Reformers =====
+    function explode(cx, cy, ptsSnapshot) {
+      const now = performance.now() / 1000;
+      if (now - lastExplodeT < EXPLODE_COOLDOWN_S) return;
 
-    const CALM = ["·", ".", "`", "˚", ",", "o", "0", "0", "0"];
-    const MID = ["-", "~", "=", "+", "*"];
-    const EXCIT = ["*", "!", "!", "^", "#", "%", "@"];
+      lastExplodeT = now;
+      shattered = true;
+      shatterTime = now;
+      heartAlpha = 0;
 
-    function setBucketFontFromF(f) {
-      const bucket = (f < 1.05) ? 0 : (f < 1.25 ? 1 : 2);
-      setFontBucket(bucket);
+      // start cooling: push tempo toward idle during reform
+      cooling = true;
+      coolUntil = now + REFORM_DELAY_S + REFORM_DURATION_S + 0.5;
+
+      // outward debris
+      for (let i = 0; i < EXPLODE_PARTICLES; i++) {
+        const ang = Math.random() * TAU;
+        const spd = 240 + Math.random() * 1000;
+        const size = 12 + Math.random() * 18;
+        const chSets = ["·", ".", "`", "˚", ",", "o", "0", "-", "~", "=", "+", "*", "*", "!", "^", "#", "%", "@"];
+        const ch = chSets[Math.floor(Math.random() * chSets.length)];
+        debris.push({
+          x: cx, y: cy,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd,
+          ch, size,
+          color: `hsl(${(8 + Math.random() * 30) % 360} 85% 50%)`,
+          life: 2.6 + Math.random() * 1.0
+        });
+      }
+
+      // reformers toward target points
+      reformers.length = 0;
+      const targets = [];
+      for (let i = 0; i < ptsSnapshot.length; i += Math.max(1, Math.floor(ptsSnapshot.length / REFORM_PARTICLES))) {
+        targets.push(ptsSnapshot[i]);
+      }
+      for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
+        const side = Math.floor(Math.random() * 4);
+        let sx = 0, sy = 0;
+        if (side === 0) { sx = Math.random() * CW; sy = -30; }
+        else if (side === 1) { sx = CW + 30; sy = Math.random() * CH; }
+        else if (side === 2) { sx = Math.random() * CW; sy = CH + 30; }
+        else { sx = -30; sy = Math.random() * CH; }
+
+        const dx = t.sx - sx, dy = t.sy - sy;
+        const dist = Math.hypot(dx, dy) || 1;
+        const spd = 160 + Math.random() * 160;
+        const vx = dx / dist * spd;
+        const vy = dy / dist * spd;
+        const size = 12 + Math.random() * 10;
+        const ch = "*+=@#%!"[Math.floor(Math.random() * 7)];
+        reformers.push({ x: sx, y: sy, vx, vy, tx: t.sx, ty: t.sy, ch, size, life: REFORM_DELAY_S + REFORM_DURATION_S });
+      }
+
+      // also bump emaIKI high so BPM drifts down toward idle
+      emaIKI = Math.max(emaIKI, MAX_IKI * 1.4);
     }
+
+    function updateAndDrawDebris(dt) {
+      if (!debris.length) return;
+      btx.save();
+      for (let i = debris.length - 1; i >= 0; i--) {
+        const d = debris[i];
+        d.vy += GRAVITY * dt;
+        d.x += d.vx * dt;
+        d.y += d.vy * dt;
+        d.life -= dt;
+        const a = clamp(d.life / 2.0, 0, 1);
+        if (a <= 0 || d.y > CH + 120) { debris.splice(i, 1); continue; }
+        btx.globalAlpha = a;
+        btx.font = `${d.size}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+        btx.fillStyle = d.color;
+        btx.fillText(d.ch, d.x, d.y);
+      }
+      btx.restore();
+    }
+
+    function updateAndDrawReformers(dt, nowS) {
+      if (!reformers.length) return;
+
+      const tSince = nowS - shatterTime;
+      let reformProgress = clamp((tSince - REFORM_DELAY_S) / REFORM_DURATION_S, 0, 1);
+      heartAlpha = smoothstep(reformProgress); // fade heart in slowly
+
+      btx.save();
+      for (let i = reformers.length - 1; i >= 0; i--) {
+        const r = reformers[i];
+        const k = 2.0; // steering factor
+        r.vx += (r.tx - r.x) * k * dt;
+        r.vy += (r.ty - r.y) * k * dt;
+        const vMag = Math.hypot(r.vx, r.vy);
+        const vMax = 520;
+        if (vMag > vMax) { r.vx *= vMax / vMag; r.vy *= vMax / vMag; }
+
+        r.x += r.vx * dt;
+        r.y += r.vy * dt;
+        r.life -= dt;
+
+        const toTarget = Math.hypot(r.tx - r.x, r.ty - r.y);
+        const a = clamp(1 - toTarget / 200, 0.05, 1.0) * 0.9;
+        btx.globalAlpha = a * 0.9;
+        btx.font = `${r.size}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+        btx.fillStyle = `hsl(${(8 + 20 * (1 - a)) % 360} 70% ${50 + 20 * (1 - a)}%)`;
+        btx.fillText(r.ch, r.x, r.y);
+
+        if (toTarget < 6 || r.life <= 0) { reformers.splice(i, 1); }
+      }
+      btx.restore();
+
+      // Finished reform → snap to full opacity & end cooling so colors return to normal
+      if (!reformers.length && heartAlpha >= 0.999) {
+        shattered = false;
+        heartAlpha = 1.0;
+        cooling = false;              // <— stop the pale “cooling” palette
+      }
+    }
+
+    // ===== Main timing (single declaration) =====
+    let lastT = performance.now();
+    let acc = 0;
+    const STEP = 1 / 60;
 
     function frame(dt) {
+      const nowS = performance.now() / 1000;
+
+      // Normal idle drift
       const since = lastKeyTime ? (performance.now() - lastKeyTime) : Infinity;
-      if (since > 40) { emaIKI += (MAX_IKI - emaIKI) * (1 - Math.exp(-dt / IDLE_TAU)); }
+      if (since > 40) emaIKI += (MAX_IKI - emaIKI) * (1 - Math.exp(-dt / IDLE_TAU));
 
-      const ikiC = clamp(emaIKI, MIN_IKI, MAX_IKI);
-      const t = (ikiC - MIN_IKI) / (MAX_IKI - MIN_IKI);
-      const targetP = lmap(t, 0, 1, FAST_PERIOD, REST_PERIOD);
-      currentPeriod += (targetP - currentPeriod) * (1 - Math.exp(-dt / PERIOD_TAU));
+      // Extra cooling drift after an explosion (until reform finishes)
+      if (cooling) {
+        const targetIKI = MAX_IKI * 1.6; // very slow
+        emaIKI += (targetIKI - emaIKI) * (1 - Math.exp(-dt / COOL_EXTRA_TAU_S));
+        if (nowS >= coolUntil) cooling = false;
+      }
 
-      const fBreath = 1 / currentPeriod;
+      // Period tracks target (slower for gradual feel)
+      const tRaw = (emaIKI - MIN_IKI) / (MAX_IKI - MIN_IKI);
+      const targetP = lmap(tRaw, 0, 1, FAST_PERIOD, REST_PERIOD);
+      const reformSlowMul = shattered ? 1.35 : 1.0; // even slower during reform
+      const targetPReform = targetP * reformSlowMul;
+
+      currentPeriod += (targetPReform - currentPeriod) * (1 - Math.exp(-dt / PERIOD_TAU));
+
+      const fBreath = 1 / Math.max(0.03, currentPeriod);
       phaseBreath += TAU * fBreath * dt; if (phaseBreath > 1e6) phaseBreath -= 1e6;
 
-      const heartPeriod = lmap(currentPeriod, FAST_PERIOD, REST_PERIOD, HEART_MIN, HEART_MAX);
+      const heartPeriod = Math.max(0.03, currentPeriod * HEART_RATIO);
       const fHeart = 1 / heartPeriod;
       phaseHeart += TAU * fHeart * dt; if (phaseHeart > 1e6) phaseHeart -= 1e6;
 
       heartAudio.setPeriod(heartPeriod);
 
-      const breath = 0.5 + 0.5 * Math.sin(phaseBreath);
       const hbRaw = cardiacSeries(phaseHeart);
       const HB_TAU = 0.12;
       hbEnv += (hbRaw - hbEnv) * (1 - Math.exp(-dt / HB_TAU));
 
-      const tempoNormRaw = clamp((fBreath - 1 / REST_PERIOD) / (1 / FAST_PERIOD - 1 / REST_PERIOD), 0, 1);
-      const tempoNorm = easeStep(tempoNormRaw, 0.35, 0.90);
+      const tempoNormRaw = (fBreath - 1 / REST_PERIOD) / (1 / FAST_PERIOD - 1 / REST_PERIOD);
+      const tempoNorm = easeStep(clamp(tempoNormRaw, 0, 1), 0.35, 0.90);
       const HUE_BLUE = 208, HUE_RED = 8;
-      const baseHue = hueLerpShortest(HUE_BLUE, HUE_RED, tempoNorm);
+      const baseHue = hueLerpShortest(HUE_BLUE, HUE_RED, clamp(tempoNormRaw, 0, 1));
       const hueBoost = 10 * (hbEnv - 0.5);
 
-      const excite = clamp(0.75 * tempoNorm + 0.25 * hbEnv, 0, 1);
-
+      // Camera & shape
       const R0 = Math.min(CW, CH) * 0.36;
       const R = R0 * (1.00 + 0.060 * hbEnv + 0.010 * Math.sin(phaseBreath - 0.4));
       const camZ = R0 * 2.6;
@@ -405,6 +547,30 @@
       const waveK1 = 3.0, waveK2 = 4.6;
       const wavePhase = 1.15 * phaseBreath + 0.45 * hbEnv;
 
+      const centerX = CW / 2, centerY = CH / 2;
+
+      // Background layer
+      btx.clearRect(0, 0, CW, CH);
+
+      if (pendingChar) {
+        spawnBgGlyphOutsideHeart(pendingChar, R, centerX, centerY);
+        pendingChar = null;
+      }
+      if (bgGlyph) {
+        btx.save();
+        btx.globalAlpha = bgGlyph.alpha * 0.9;
+        btx.translate(bgGlyph.x, bgGlyph.y);
+        btx.rotate(bgGlyph.rot);
+        btx.font = `${bgGlyph.size}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+        btx.fillStyle = `hsl(${(208 + 12 * Math.sin(phaseBreath)) % 360} 28% 52%)`;
+        btx.fillText(bgGlyph.ch, 0, 0);
+        btx.restore();
+        bgGlyph.life -= dt;
+        bgGlyph.alpha = Math.max(0, bgGlyph.life / 0.8);
+        if (bgGlyph.alpha <= 0) bgGlyph = null;
+      }
+
+      // Project heart points
       const pts = [];
       for (let k = 0; k < base.length; k++) {
         const { th, ph, idx } = base[k];
@@ -418,15 +584,15 @@
         c = Math.cos(rotX); s = Math.sin(rotX); let y1 = c * Y - s * Z, z2 = s * Y + c * Z; Y = y1; Z = z2;
         c = Math.cos(rotZ); s = Math.sin(rotZ); let x2 = c * X - s * Y, y2 = s * X + c * Y; X = x2; Y = y2;
         const zc = Z * R, f = camZ / (camZ - zc);
-        const sx = CW / 2 + X * R * f, sy = CH / 2 + Y * R * f;
-        pts.push({ sx, sy, f, Y, wv, idx });
+        const sx = centerX + X * R * f, sy = centerY + Y * R * f;
+        pts.push({ sx, sy, f, Y, idx });
       }
       pts.sort((a, b) => a.f - b.f);
 
-      btx.clearRect(0, 0, CW, CH);
-
+      // Draw heart
       const rippleK = 5.6;
-
+      btx.save();
+      btx.globalAlpha = shattered ? heartAlpha : 1.0;  // full opacity when not reforming
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
         const facing = clamp((p.f - 0.8) / 0.6, 0, 1);
@@ -434,58 +600,60 @@
         const intensity = clamp(0.40 + 0.45 * facing + 0.22 * ripple, 0, 1);
 
         const h = hash01(p.idx);
-        let ch;
-        if (excite < 0.33) {
-          const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
-          if (intensity > 0.85 && h > 0.9) { ch = MID[Math.floor(h * MID.length)]; }
-          else { ch = CALM[idxC]; }
-        } else if (excite < 0.66) {
-          const wC = 1.0 - (excite - 0.33) / 0.33;
-          const wE = (excite - 0.33) / 0.33;
-          const wM = 0.5;
-          const pick = h;
-          if (pick < wC * 0.6) {
-            const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
-            ch = CALM[idxC];
-          } else if (pick < wC * 0.6 + wM * 0.25 + intensity * 0.25) {
-            ch = MID[Math.min(MID.length - 1, Math.floor(intensity * MID.length))];
-          } else {
-            ch = EXCIT[Math.min(EXCIT.length - 1, Math.floor(intensity * (EXCIT.length - 1)))];
-          }
-        } else {
-          const idxE = Math.min(EXCIT.length - 1, Math.floor(intensity * (EXCIT.length - 1)));
-          if (intensity < 0.35 && h < 0.15) { ch = MID[Math.floor(h * MID.length)]; }
-          else { ch = EXCIT[idxE]; }
-        }
-
         const vMix = (p.Y + 1) / 2;
         const hue = (baseHue + (vMix - 0.5) * 12 + hueBoost + 360) % 360;
-        const S = clamp(64 + 20 * (tempoNorm - 0.5) + 8 * (hbEnv - 0.5), 50, 98);
-        const L = clamp(60 - 8 * tempoNorm + (intensity - 0.5) * 18, 34, 90);
+        // Maintain punchy color even after reform
+        const S = clamp(64 + 20 * (clamp(tempoNormRaw, 0, 1) - 0.5) + 8 * (hbEnv - 0.5), 55, 98);
+        const L = clamp(56 - 6 * clamp(tempoNormRaw, 0, 1) + (intensity - 0.5) * 18, 34, 88);
 
+        const color = `hsl(${hue.toFixed(1)} ${S.toFixed(0)}% ${L.toFixed(0)}%)`;
         setBucketFontFromF(p.f);
-        btx.fillStyle = `hsl(${hue.toFixed(1)} ${S.toFixed(0)}% ${L.toFixed(0)}%)`;
+        btx.fillStyle = color;
+        const ch = pickHeartChar(intensity, clamp(tempoNormRaw, 0, 1), h);
         btx.fillText(ch, p.sx, p.sy);
       }
+      btx.restore();
 
+      // Debris / Reform overlays
+      const bpm = (1 / heartPeriod) * 60;
+      if (!shattered && bpm >= EXPLODE_BPM) explode(centerX, centerY, pts);
+
+      updateAndDrawDebris(dt);
+      if (shattered) updateAndDrawReformers(dt, nowS);
+
+      // Compose with glow
       ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(buf, 0, 0);
 
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.filter = 'blur(26px)';
-      ctx.globalAlpha = 0.28 + 0.52 * hbEnv + 0.10 * tempoNorm;
+      ctx.globalAlpha = 0.28 + 0.52 * hbEnv + 0.10;
       ctx.drawImage(buf, 0, 0);
       ctx.filter = 'blur(14px)';
-      ctx.globalAlpha = 0.18 + 0.34 * hbEnv + 0.08 * tempoNorm;
+      ctx.globalAlpha = 0.18 + 0.34 * hbEnv + 0.08;
       ctx.drawImage(buf, 0, 0);
       ctx.restore();
 
-      bpmEl.textContent = `${(fHeart * 60).toFixed(0)} bpm`;
-      hud.textContent = `tempo ${fBreath.toFixed(2)} Hz · beat ${(fHeart * 60).toFixed(0)} bpm`;
+      const label = shattered
+        ? `reforming… · cooling · ${bpm.toFixed(0)} bpm`
+        : `breath ${(1 / Math.max(0.03, currentPeriod)).toFixed(2)} Hz · ${bpm.toFixed(0)} bpm`;
+      hud.textContent = label;
     }
 
-    fit(); tick();
+    function loop() {
+      const now = performance.now();
+      let dt = (now - lastT) / 1000;
+      lastT = now;
+      if (dt > 0.2) dt = 0.2;
+      acc += dt;
+      while (!paused && acc >= STEP) { frame(STEP); acc -= STEP; }
+      requestAnimationFrame(loop);
+    }
+
+    // ---- start ----
+    fit();
+    loop();
   </script>
 </body>
 
