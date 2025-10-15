@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cardiac ASCII Mesh — Calm↔Excited Characters, Blue→Red</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --border: #e5e7eb;
+      --ink: #111827;
+      --sub: #6b7280;
+      --shadow: 0 8px 24px rgba(0, 0, 0, .08);
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      height: 100%
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
+    }
+
+    .app {
+      height: 100dvh;
+      display: grid;
+      grid-template-columns: minmax(320px, 36%) 1fr;
+      gap: 22px;
+      padding: 22px;
+    }
+
+    @media (max-width:900px) {
+      .app {
+        grid-template-columns: 1fr;
+        grid-auto-rows: minmax(240px, auto)
+      }
+    }
+
+    .card {
+      height: 100%;
+      background: linear-gradient(180deg, rgba(0, 0, 0, .015), rgba(0, 0, 0, 0)), var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      backdrop-filter: blur(3px);
+    }
+
+    .head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: linear-gradient(180deg, rgba(0, 0, 0, .02), rgba(0, 0, 0, 0));
+    }
+
+    .title {
+      font-weight: 700;
+      letter-spacing: .2px
+    }
+
+    .cluster {
+      display: flex;
+      align-items: center;
+      gap: 10px
+    }
+
+    .badge {
+      font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas;
+      color: var(--sub)
+    }
+
+    .editor {
+      flex: 1;
+      padding: 14px 16px 16px
+    }
+
+    textarea {
+      width: 100%;
+      height: 100%;
+      resize: none;
+      border: 0;
+      outline: none;
+      color: var(--ink);
+      background: transparent;
+      font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
+    }
+
+    textarea::placeholder {
+      color: #a7b4c4
+    }
+
+    .typing .card {
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, .18), var(--shadow);
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--ink);
+      padding: 6px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      font: 12px ui-sans-serif, system-ui;
+      transition: transform .06s ease, filter .15s ease;
+    }
+
+    .btn:hover {
+      filter: brightness(0.98)
+    }
+
+    .btn:active {
+      transform: scale(0.98)
+    }
+
+    .vis {
+      position: relative;
+      border-radius: 18px;
+      overflow: hidden;
+      background:
+        radial-gradient(900px 600px at 20% -10%, rgba(0, 0, 0, .035), transparent 60%),
+        #fff;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      display: grid;
+      place-items: center;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block
+    }
+
+    .hud {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      pointer-events: none;
+      font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas;
+      color: #6b7280;
+      background: rgba(255, 255, 255, .75);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: 999px;
+      backdrop-filter: blur(8px);
+    }
+  </style>
+</head>
+
+<body>
+  <main class="app" id="app">
+    <!-- Left panel -->
+    <section class="card">
+      <div class="head">
+        <div class="title">Enter text:</div>
+        <div class="cluster">
+          <div class="badge" id="bpm">-- bpm</div>
+          <button id="snd" class="btn" type="button">Sound: Off</button>
+        </div>
+      </div>
+      <div class="editor">
+        <textarea id="editor" spellcheck="false"
+          placeholder="Relaxed: 0 o · ˚ ,  …  Excited: ! ^ * # % @ . Type faster to make it ‘excited’."></textarea>
+      </div>
+    </section>
+
+    <!-- Right panel -->
+    <section class="vis" id="vis">
+      <canvas id="mesh"></canvas>
+      <div class="hud" id="hud">ready…</div>
+    </section>
+  </main>
+
+  <script>
+    /* ===== Parameters ===== */
+    const REST_PERIOD = 4.0, FAST_PERIOD = 0.6;          // envelope period (sec)
+    const MIN_IKI = 120, MAX_IKI = 2200, EMA_A = 0.22;     // typing → tempo
+    const IDLE_TAU = 2.8, PERIOD_TAU = 0.7;              // relax/settle
+    const HEART_MIN = 0.45, HEART_MAX = 1.10;            // s/beat
+
+    /* ===== DOM & State ===== */
+    const app = document.getElementById('app');
+    const vis = document.getElementById('vis');
+    const cvs = document.getElementById('mesh');
+    const ctx = cvs.getContext('2d', { alpha: false });
+    const hud = document.getElementById('hud');
+    const bpmEl = document.getElementById('bpm');
+    const editor = document.getElementById('editor');
+    const sndBtn = document.getElementById('snd');
+
+    let lastKeyTime = 0, emaIKI = 900;
+    let currentPeriod = REST_PERIOD;
+    let phaseBreath = 0, phaseHeart = 0;   // unwrapped radians
+    let hbEnv = 0;
+    let paused = false;
+
+    const TAU = Math.PI * 2;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const lmap = (v, a, b, c, d) => c + (d - c) * ((v - a) / (b - a));
+
+    /* ===== Mesh grid (LAT/LON points on a sphere) ===== */
+    let CW = 0, CH = 0, LAT = 60, LON = 100;
+    const base = []; // {th,ph,idx}
+    const buf = document.createElement('canvas');
+    const btx = buf.getContext('2d', { alpha: true });
+
+    function buildGrid() {
+      base.length = 0;
+      let idx = 0;
+      for (let i = 0; i <= LAT; i++) {
+        const th = i / LAT * Math.PI;
+        for (let j = 0; j <= LON; j++) {
+          const ph = j / LON * TAU;
+          base.push({ th, ph, idx: idx++ });
+        }
+      }
+    }
+
+    function fit() {
+      const r = window.devicePixelRatio || 1;
+      CW = vis.clientWidth | 0; CH = vis.clientHeight | 0;
+      cvs.width = CW * r; cvs.height = CH * r; ctx.setTransform(r, 0, 0, r, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      buf.width = CW; buf.height = CH;
+
+      // choose density for performance/clarity
+      const target = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1400 : 2200;
+      const lon = Math.max(64, Math.min(112, Math.round(Math.sqrt(target * 2))));
+      const lat = Math.round(lon * 0.6);
+      LON = lon; LAT = lat; buildGrid();
+
+      // base character size (scaled per-depth bucket)
+      FONT_BASE = Math.round(Math.min(CW, CH) * 0.020); // ~2%
+      FONT_BASE = Math.max(10, Math.min(22, FONT_BASE));
+      btx.textBaseline = 'middle';
+    }
+    addEventListener('resize', fit);
+    document.addEventListener('visibilitychange', () => { paused = document.hidden; });
+
+    /* ===== ASCII size buckets to hint 3D depth ===== */
+    let FONT_BASE = 16;
+    const setFontBucket = (bucket) => {
+      const size = Math.round(FONT_BASE * (0.85 + 0.22 * bucket)); // bucket 0..2
+      btx.font = `${size}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    };
+
+    /* ===== Typing → tempo ===== */
+    function markTyping() {
+      const now = performance.now();
+      if (lastKeyTime > 0) {
+        const diff = now - lastKeyTime;
+        emaIKI = (1 - EMA_A) * emaIKI + EMA_A * diff;
+      }
+      lastKeyTime = now;
+      app.classList.add('typing'); clearTimeout(markTyping._t);
+      markTyping._t = setTimeout(() => app.classList.remove('typing'), 300);
+    }
+    document.addEventListener('keydown', markTyping);
+    editor.addEventListener('input', markTyping);
+
+    /* ===== Smooth heartbeat waveform (cosine series) ===== */
+    function cardiacSeries(t) {
+      const y = 0.44
+        + 0.36 * Math.cos(t - 0.05)
+        + 0.22 * Math.cos(2 * t - 1.2)
+        + 0.11 * Math.cos(3 * t - 0.4)
+        + 0.06 * Math.cos(4 * t - 0.9);
+      return Math.pow(Math.max(0, y), 1.20);
+    }
+
+    /* ===== Audio: heartbeat only ===== */
+    class AudioBus {
+      constructor() { this.ctx = null; this.master = null; this.on = false; }
+      async init() {
+        if (this.ctx) return;
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.master = this.ctx.createGain(); this.master.gain.value = 0.55;
+        this.master.connect(this.ctx.destination);
+      }
+      async ensureRunning() { await this.init(); if (this.ctx.state !== 'running') { try { await this.ctx.resume(); } catch (e) { } } }
+    }
+    const audioBus = new AudioBus();
+
+    class HeartbeatAudio {
+      constructor(bus) {
+        this.bus = bus; this.on = false; this.nextTime = 0; this.period = 0.9;
+        this.lookAhead = 0.10; this.horizon = 0.35; this.timer = null;
+      }
+      async start() {
+        await this.bus.ensureRunning(); if (this.on) return; this.on = true;
+        const now = this.bus.ctx.currentTime + 0.05; this.nextTime = now;
+        this._thump(now, 1.0); this._thump(now + 0.30 * this.period, 0.55);
+        this.timer = setInterval(() => this._tick(), this.lookAhead * 1000);
+      }
+      stop() { if (!this.on) return; this.on = false; clearInterval(this.timer); this.timer = null; }
+      setPeriod(p) { this.period = Math.max(0.35, Math.min(1.6, p)); }
+      _tick() {
+        const ct = this.bus.ctx.currentTime;
+        while (this.nextTime < ct + this.horizon) {
+          const t1 = this.nextTime, t2 = t1 + 0.30 * this.period;
+          this._thump(t1, 1.0); this._thump(t2, 0.55);
+          this.nextTime += this.period;
+        }
+      }
+      _thump(time, amp = 1) {
+        const ctx = this.bus.ctx;
+        // Sub
+        const sub = ctx.createOscillator(); sub.type = 'sine';
+        const subG = ctx.createGain(); subG.gain.setValueAtTime(0, time);
+        subG.gain.linearRampToValueAtTime(0.55 * amp, time + 0.005);
+        subG.gain.exponentialRampToValueAtTime(0.001, time + 0.24);
+        sub.frequency.setValueAtTime(36, time);
+        sub.frequency.exponentialRampToValueAtTime(30, time + 0.22);
+        // Body
+        const osc = ctx.createOscillator(); osc.type = 'sine';
+        const oG = ctx.createGain(); oG.gain.setValueAtTime(0, time);
+        oG.gain.linearRampToValueAtTime(0.95 * amp, time + 0.006);
+        oG.gain.exponentialRampToValueAtTime(0.001, time + 0.20);
+        osc.frequency.setValueAtTime(90, time);
+        osc.frequency.exponentialRampToValueAtTime(55, time + 0.18);
+        // Click
+        const nBuf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+        const d = nBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / d.length * 6);
+        const noise = ctx.createBufferSource(); noise.buffer = nBuf;
+        const nG = ctx.createGain(); nG.gain.setValueAtTime(0.15 * amp, time);
+        nG.gain.exponentialRampToValueAtTime(0.002, time + 0.05);
+        // Filters
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 28;
+
+        sub.connect(subG).connect(lp);
+        osc.connect(oG).connect(lp);
+        noise.connect(nG).connect(lp);
+        lp.connect(hp).connect(this.bus.master);
+
+        sub.start(time); sub.stop(time + 0.28);
+        osc.start(time); osc.stop(time + 0.24);
+        noise.start(time); noise.stop(time + 0.06);
+      }
+    }
+    const heartAudio = new HeartbeatAudio(audioBus);
+
+    sndBtn.addEventListener('click', async () => {
+      if (!audioBus.on) { await audioBus.ensureRunning(); audioBus.on = true; }
+      if (!heartAudio.on) { await heartAudio.start(); sndBtn.textContent = 'Sound: On'; }
+      else { heartAudio.stop(); sndBtn.textContent = 'Sound: Off'; }
+    });
+    window.addEventListener('pointerdown', async () => { try { await audioBus.ensureRunning(); await heartAudio.start(); sndBtn.textContent = 'Sound: On'; } catch (e) { } }, { once: true });
+    window.addEventListener('keydown', async () => { try { await audioBus.ensureRunning(); await heartAudio.start(); sndBtn.textContent = 'Sound: On'; } catch (e) { } }, { once: true });
+
+    /* ===== Render loop (fixed step) ===== */
+    let last = performance.now(), acc = 0, STEP = 1 / 60;
+    function tick() {
+      const now = performance.now(); let dt = (now - last) / 1000; last = now;
+      if (dt > 0.2) dt = 0.2; acc += dt;
+      if (paused) { requestAnimationFrame(tick); return; }
+      while (acc >= STEP) { frame(STEP); acc -= STEP; }
+      requestAnimationFrame(tick);
+    }
+
+    /* Helpers for hue swap behavior */
+    const easeStep = (t, a = 0.35, b = 0.90) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
+    const hueLerpShortest = (h1, h2, t) => { let d = ((h2 - h1 + 540) % 360) - 180; return (h1 + d * t + 360) % 360; };
+
+    /* Deterministic per-point jitter (no flicker) */
+    function hash01(i) { // 0..1
+      const s = Math.sin(i * 12.9898) * 43758.5453;
+      return s - Math.floor(s);
+    }
+
+    /* Character palettes */
+    const CALM = ["·", ".", "`", "˚", ",", "o", "0", "0", "0"];   // heavy on 0 at rest
+    const MID = ["-", "~", "=", "+", "*"];                   // transition energy
+    const EXCIT = ["*", "!", "!", "^", "#", "%", "@"];           // high arousal
+
+    /* ASCII size buckets (3D depth hint) */
+    function setBucketFontFromF(f) {
+      const bucket = (f < 1.05) ? 0 : (f < 1.25 ? 1 : 2);
+      setFontBucket(bucket);
+    }
+
+    /* Main frame */
+    function frame(dt) {
+      const since = lastKeyTime ? (performance.now() - lastKeyTime) : Infinity;
+      if (since > 40) { emaIKI += (MAX_IKI - emaIKI) * (1 - Math.exp(-dt / IDLE_TAU)); }
+
+      // tempo from typing
+      const ikiC = clamp(emaIKI, MIN_IKI, MAX_IKI);
+      const t = (ikiC - MIN_IKI) / (MAX_IKI - MIN_IKI);
+      const targetP = lmap(t, 0, 1, FAST_PERIOD, REST_PERIOD);
+      currentPeriod += (targetP - currentPeriod) * (1 - Math.exp(-dt / PERIOD_TAU));
+
+      // phases
+      const fBreath = 1 / currentPeriod;
+      phaseBreath += TAU * fBreath * dt; if (phaseBreath > 1e6) phaseBreath -= 1e6;
+
+      const heartPeriod = lmap(currentPeriod, FAST_PERIOD, REST_PERIOD, HEART_MIN, HEART_MAX);
+      const fHeart = 1 / heartPeriod;
+      phaseHeart += TAU * fHeart * dt; if (phaseHeart > 1e6) phaseHeart -= 1e6;
+
+      heartAudio.setPeriod(heartPeriod);
+
+      const breath = 0.5 + 0.5 * Math.sin(phaseBreath);
+      const hbRaw = cardiacSeries(phaseHeart);
+      const HB_TAU = 0.12;
+      hbEnv += (hbRaw - hbEnv) * (1 - Math.exp(-dt / HB_TAU));
+
+      // hue swap (blue→red) with late acceleration
+      const tempoNormRaw = clamp((fBreath - 1 / REST_PERIOD) / (1 / FAST_PERIOD - 1 / REST_PERIOD), 0, 1);
+      const tempoNorm = easeStep(tempoNormRaw, 0.35, 0.90);
+      const HUE_BLUE = 208, HUE_RED = 8;
+      const baseHue = hueLerpShortest(HUE_BLUE, HUE_RED, tempoNorm);
+      const hueBoost = 10 * (hbEnv - 0.5);      // tiny beat accent
+
+      // excitement factor: mostly speed, a bit of beat
+      const excite = clamp(0.75 * tempoNorm + 0.25 * hbEnv, 0, 1);
+
+      // project points (same 3D mesh as before)
+      const R0 = Math.min(CW, CH) * 0.36;
+      const R = R0 * (1.00 + 0.060 * hbEnv + 0.010 * Math.sin(phaseBreath - 0.4));
+      const camZ = R0 * 2.6;
+      const rotY = 0.16 * Math.sin(phaseBreath * 0.7);
+      const rotX = 0.14 * Math.sin(phaseBreath * 0.9 + 0.8);
+      const rotZ = 0.06 * Math.sin(phaseBreath * 0.5 - 0.3);
+      const waveA = 0.045 + 0.017 * hbEnv + 0.010 * (0.5 + 0.5 * Math.sin(phaseBreath));
+      const waveK1 = 3.0, waveK2 = 4.6;
+      const wavePhase = 1.15 * phaseBreath + 0.45 * hbEnv;
+
+      const pts = [];
+      for (let k = 0; k < base.length; k++) {
+        const { th, ph, idx } = base[k];
+
+        let x = Math.sin(th) * Math.cos(ph);
+        let y = Math.cos(th);
+        let z = Math.sin(th) * Math.sin(ph);
+
+        const wv = waveA * (0.7 * Math.sin(waveK1 * th + wavePhase) + 0.5 * Math.sin(waveK2 * ph - 0.8 * wavePhase));
+        const rr = 1 + wv; x *= rr; y *= rr; z *= rr;
+
+        // rotate
+        let X = x, Y = y, Z = z, c, s;
+        c = Math.cos(rotY); s = Math.sin(rotY); let x1 = c * X + s * Z, z1 = -s * X + c * Z; X = x1; Z = z1;
+        c = Math.cos(rotX); s = Math.sin(rotX); let y1 = c * Y - s * Z, z2 = s * Y + c * Z; Y = y1; Z = z2;
+        c = Math.cos(rotZ); s = Math.sin(rotZ); let x2 = c * X - s * Y, y2 = s * X + c * Y; X = x2; Y = y2;
+
+        const zc = Z * R, f = camZ / (camZ - zc);
+        const sx = CW / 2 + X * R * f, sy = CH / 2 + Y * R * f;
+        pts.push({ sx, sy, f, Y, wv, idx });
+      }
+      // back-to-front
+      pts.sort((a, b) => a.f - b.f);
+
+      // clear offscreen
+      btx.clearRect(0, 0, CW, CH);
+
+      // thresholds for char switching
+      // intensity drives per-point choice; excite mixes palettes
+      const rippleK = 5.6;
+
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        const facing = clamp((p.f - 0.8) / 0.6, 0, 1);
+        const ripple = 0.5 + 0.5 * Math.sin(rippleK * (p.sx * 0.002 + p.sy * 0.002) + 1.0 * phaseBreath);
+        const intensity = clamp(0.40 + 0.45 * facing + 0.22 * ripple, 0, 1);
+
+        // palette blend logic:
+        // - mostly CALM when excite≈0
+        // - add MID in the middle
+        // - mostly EXCIT near 1
+        const h = hash01(p.idx); // stable 0..1 per point
+        let ch;
+        if (excite < 0.33) {
+          // calm-dominant: choose from CALM; occasional MID spark on strong intensity
+          const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
+          if (intensity > 0.85 && h > 0.9) { ch = MID[Math.floor(h * MID.length)]; }
+          else { ch = CALM[idxC]; }
+        } else if (excite < 0.66) {
+          // blend zone: weighted pick between CALM/MID/EXCIT
+          const wC = 1.0 - (excite - 0.33) / 0.33;          // fades 1→0
+          const wE = (excite - 0.33) / 0.33;                // rises 0→1
+          const wM = 0.5;                                // steady presence
+          const pick = h;
+          if (pick < wC * 0.6) {
+            const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
+            ch = CALM[idxC];
+          } else if (pick < wC * 0.6 + wM * 0.25 + intensity * 0.25) {
+            ch = MID[Math.min(MID.length - 1, Math.floor(intensity * MID.length))];
+          } else {
+            ch = EXCIT[Math.min(EXCIT.length - 1, Math.floor(intensity * (EXCIT.length - 1)))];
+          }
+        } else {
+          // excited-dominant: choose from EXCIT; occasional MID for texture
+          const idxE = Math.min(EXCIT.length - 1, Math.floor(intensity * (EXCIT.length - 1)));
+          if (intensity < 0.35 && h < 0.15) { ch = MID[Math.floor(h * MID.length)]; }
+          else { ch = EXCIT[idxE]; }
+        }
+
+        // color (blue→red) with slight vertical flavor + beat accent
+        const vMix = (p.Y + 1) / 2;
+        const hue = (baseHue + (vMix - 0.5) * 12 + hueBoost + 360) % 360;
+        const S = clamp(64 + 20 * (tempoNorm - 0.5) + 8 * (hbEnv - 0.5), 50, 98);
+        const L = clamp(60 - 8 * tempoNorm + (intensity - 0.5) * 18, 34, 90);
+
+        setBucketFontFromF(p.f);
+        btx.fillStyle = `hsl(${hue.toFixed(1)} ${S.toFixed(0)}% ${L.toFixed(0)}%)`;
+        btx.fillText(ch, p.sx, p.sy);
+      }
+
+      // compose + bright additive bloom
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, CW, CH);
+      ctx.drawImage(buf, 0, 0);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.filter = 'blur(26px)';
+      ctx.globalAlpha = 0.28 + 0.52 * hbEnv + 0.10 * tempoNorm;
+      ctx.drawImage(buf, 0, 0);
+      ctx.filter = 'blur(14px)';
+      ctx.globalAlpha = 0.18 + 0.34 * hbEnv + 0.08 * tempoNorm;
+      ctx.drawImage(buf, 0, 0);
+      ctx.restore();
+
+      bpmEl.textContent = `${(fHeart * 60).toFixed(0)} bpm`;
+      hud.textContent = `tempo ${fBreath.toFixed(2)} Hz · beat ${(fHeart * 60).toFixed(0)} bpm · points ${pts.length}`;
+    }
+
+    /* Boot */
+    fit(); tick();
+  </script>
+</body>
+
+</html>
