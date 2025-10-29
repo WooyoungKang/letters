@@ -1,95 +1,120 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cardiac ASCII Mesh — DOS Mode</title>
   <style>
-    :root{
-      --bg:#000000;
-      --panel:#000000;
-      --ink:#00ff88;           /* neon green */
-      --ink-dim:#1aff8a;       /* lighter variant */
-      --border:#0f3;           /* green border */
+    :root {
+      --bg: #000000;
+      --panel: #000000;
+      --ink: #00ff88;
+      --ink-dim: #1aff8a;
+      --border: #0f3;
     }
 
-    *{ box-sizing:border-box }
+    * {
+      box-sizing: border-box
+    }
 
-    html,body{ height:100% }
+    html,
+    body {
+      height: 100%
+    }
 
-    body{
-      margin:0;
-      background:var(--bg);
-      color:var(--ink);
-      /* old-school mono */
-      font:14px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       letter-spacing: .2px;
     }
 
-    .app{
-      height:100dvh;
-      display:grid;
-      grid-template-columns:1fr;
-      padding:12px;
+    .app {
+      height: 100dvh;
+      display: grid;
+      grid-template-columns: 1fr;
+      padding: 12px;
     }
 
-    .vis{
-      position:relative;
+    .vis {
+      position: relative;
       border-radius: 0;
-      overflow:hidden;
-      background:#000;                 /* pure black */
-      border: none; /* removed box border */
-      display:grid;
-      place-items:center;
+      overflow: hidden;
+      background: #000;
+      border: none;
+      display: grid;
+      place-items: center;
     }
 
-    canvas{ width:100%; height:100%; display:block; background:#000 }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000
+    }
 
-    /* Minimal, DOS-ish overlays */
     .hud,
-    .toolbar{
-      position:absolute;
-      top:10px;
-      background:transparent;
-      border:1px solid var(--border);
-      color:var(--ink);
-      padding:4px 8px;
-      border-radius:0;                 /* square, no rounded */
-      font:12px "Courier New", Courier, ui-monospace, monospace;
-      pointer-events:auto;
-      user-select:none;
+    .toolbar {
+      position: absolute;
+      top: 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--ink);
+      padding: 4px 8px;
+      border-radius: 0;
+      font: 12px "Courier New", Courier, ui-monospace, monospace;
+      pointer-events: auto;
+      user-select: none;
     }
-    .hud{ right:10px; pointer-events:none }
-    .toolbar{ left:10px; display:flex; gap:6px; align-items:center }
 
-    .btn{
-      appearance:none;
-      background:#000;
-      color:var(--ink);
-      border:1px solid var(--border);
-      padding:4px 8px;
-      font:12px "Courier New", Courier, ui-monospace, monospace;
-      border-radius:0;
-      cursor:pointer;
+    .hud {
+      right: 10px;
+      pointer-events: none
     }
-    .btn:hover{ filter: brightness(1.15) }
-    .btn:active{ filter: brightness(1.3) }
 
-    /* Subtle CRT-ish scanlines (optional, very light) */
-    .vis::after{
-      content:"";
-      position:absolute; inset:0; pointer-events:none;
-      background: repeating-linear-gradient(
-        to bottom,
-        rgba(0,255,136,0.04),
-        rgba(0,255,136,0.04) 1px,
-        transparent 1px,
-        transparent 3px
-      );
+    .toolbar {
+      left: 10px;
+      display: flex;
+      gap: 6px;
+      align-items: center
+    }
+
+    .btn {
+      appearance: none;
+      background: #000;
+      color: var(--ink);
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      font: 12px "Courier New", Courier, ui-monospace, monospace;
+      border-radius: 0;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      filter: brightness(1.15)
+    }
+
+    .btn:active {
+      filter: brightness(1.3)
+    }
+
+    .vis::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(to bottom,
+          rgba(0, 255, 136, 0.04),
+          rgba(0, 255, 136, 0.04) 1px,
+          transparent 1px,
+          transparent 3px);
       mix-blend-mode: screen;
     }
   </style>
 </head>
+
 <body>
   <main class="app" id="app">
     <section class="vis" id="vis">
@@ -102,7 +127,7 @@
   </main>
 
   <script>
-    // ===== Tunables (unchanged core dynamics) =====
+    // ===== Tunables =====
     const REST_PERIOD = 4.0, FAST_PERIOD = 0.6;
     const MIN_IKI = 120, MAX_IKI = 2200, EMA_A = 0.22;
     const IDLE_TAU = 10.0;
@@ -141,37 +166,38 @@
     const buf = document.createElement('canvas');
     const btx = buf.getContext('2d', { alpha: true });
 
-    // Typed single background glyph
+    // Typed glyph burst
     let pendingChar = null;
-    let bgGlyph = null; // {ch,x,y,size,alpha,life,rot}
+    let bgGlyphs = []; // [{ch,x,y,vx,vy,size,alpha,life,rot}]
 
     // Debris & reformers
     let debris = [];     // {x,y,vx,vy,ch,size,color,life}
     let reformers = [];  // {x,y,vx,vy,tx,ty,ch,size,life}
-    let pendingTargets = []; // captured at explode; used to start reform after full cooling
+    let pendingTargets = [];
     let lastExplodeT = -Infinity;
     let shattered = false;
     let shatterTime = 0; let reformStartS = 0;
     let heartAlpha = 1.0;
 
     let cooling = false;
-    let coolUntil = 0;   // seconds timestamp
 
-    const easeStep = (t, a = 0.35, b = 0.90) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
+    const easeStep = (t, a = 0.35, b = 0.90) => {
+      const x = Math.min(1, Math.max(0, (t - a) / (b - a)));
+      return x * x * (3 - 2 * x);
+    };
     function hash01(i) { const s = Math.sin(i * 12.9898) * 43758.5453; return s - Math.floor(s); }
 
     const CALM = ["·", ".", "`", "˚", ",", "o", "0", "0", "0"];
-    const MID  = ["-", "~", "=", "+", "*"];
-    const EXCIT=["*", "!", "!", "^", "#", "%", "@"];
+    const MID = ["-", "~", "=", "+", "*"];
+    const EXCIT = ["*", "!", "!", "^", "#", "%", "@"];
 
     function pickHeartChar(intensity, excite, h) {
       if (excite < 0.33) {
         const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
         return (intensity > 0.85 && h > 0.9) ? MID[Math.floor(h * MID.length)] : CALM[idxC];
       } else if (excite < 0.66) {
-        const wC = 1.0 - (excite - 0.33) / 0.33;
-        const wM = 0.5;
-        const pick = h;
+        const wC = 1 - (excite - 0.33) / 0.33;
+        const wM = 0.5; const pick = h;
         if (pick < wC * 0.6) {
           const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
           return CALM[idxC];
@@ -187,11 +213,11 @@
     }
 
     // ===== Grid =====
-    function buildGrid(){
+    function buildGrid() {
       base.length = 0; let idx = 0;
-      for (let i=0;i<=LAT;i++){
+      for (let i = 0; i <= LAT; i++) {
         const th = i / LAT * Math.PI;
-        for (let j=0;j<=LON;j++){
+        for (let j = 0; j <= LON; j++) {
           const ph = j / LON * TAU;
           base.push({ th, ph, idx: idx++ });
         }
@@ -200,7 +226,7 @@
 
     // ===== Fit =====
     let FONT_BASE = 16;
-    function fit(){
+    function fit() {
       const r = window.devicePixelRatio || 1;
       CW = vis.clientWidth | 0; CH = vis.clientHeight | 0;
       cvs.width = CW * r; cvs.height = CH * r; ctx.setTransform(r, 0, 0, r, 0, 0);
@@ -222,13 +248,13 @@
       const size = Math.round(FONT_BASE * (0.85 + 0.22 * bucket));
       btx.font = `${size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
     };
-    function setBucketFontFromF(f){
+    function setBucketFontFromF(f) {
       const bucket = (f < 1.05) ? 0 : (f < 1.25) ? 1 : 2;
       setFontBucket(bucket);
     }
 
     // ===== Heart signal =====
-    function cardiacSeries(t){
+    function cardiacSeries(t) {
       const y = 0.44
         + 0.36 * Math.cos(t - 0.05)
         + 0.22 * Math.cos(2 * t - 1.2)
@@ -238,67 +264,114 @@
     }
 
     // ===== Audio =====
-    class AudioBus{
-      constructor(){ this.ctx=null; this.master=null; this.on=false; this.baseGain=0.55; }
-      async init(){ if (this.ctx) return; this.ctx = new (window.AudioContext||window.webkitAudioContext)(); this.master = this.ctx.createGain(); this.master.gain.value = this.baseGain; this.master.connect(this.ctx.destination); }
-      async ensureRunning(){ await this.init(); if (this.ctx.state !== 'running'){ try{ await this.ctx.resume(); }catch(e){} } }
+    class AudioBus {
+      constructor() { this.ctx = null; this.master = null; this.on = false; this.baseGain = 0.55; }
+      async init() {
+        if (this.ctx) return;
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.master = this.ctx.createGain(); this.master.gain.value = this.baseGain;
+        this.master.connect(this.ctx.destination);
+      }
+      async ensureRunning() { await this.init(); if (this.ctx.state !== 'running') { try { await this.ctx.resume(); } catch (e) { } } }
     }
     const audioBus = new AudioBus();
 
-    class HeartbeatAudio{
-      constructor(bus){ this.bus=bus; this.on=false; this.nextTime=0; this.period=0.9; this.lookAhead=0.10; this.horizon=0.35; this.timer=null; }
-      async start(){ await this.bus.ensureRunning(); if (this.on) return; this.on=true; const now=this.bus.ctx.currentTime+0.05; this.nextTime=now; this._thump(now,1.0); this._thump(now+0.30*this.period,0.55); this.timer=setInterval(()=>this._tick(), this.lookAhead*1000); }
-      stop(){ if (!this.on) return; this.on=false; clearInterval(this.timer); this.timer=null; }
-      setPeriod(p){ this.period=Math.max(0.03,p); }
-      _tick(){ const ct=this.bus.ctx.currentTime; while(this.nextTime < ct + this.horizon){ const t1=this.nextTime, t2=t1 + 0.30 * this.period; this._thump(t1,1.0); this._thump(t2,0.55); this.nextTime += this.period; } }
-      _thump(time, amp=1){
-        const ctx=this.bus.ctx;
-        const sub=ctx.createOscillator(); sub.type='sine';
-        const subG=ctx.createGain(); subG.gain.setValueAtTime(0,time); subG.gain.linearRampToValueAtTime(0.55*amp,time+0.005); subG.gain.exponentialRampToValueAtTime(0.001,time+0.24); sub.frequency.setValueAtTime(36,time); sub.frequency.exponentialRampToValueAtTime(30,time+0.22);
-        const osc=ctx.createOscillator(); osc.type='sine';
-        const oG=ctx.createGain(); oG.gain.setValueAtTime(0,time); oG.gain.linearRampToValueAtTime(0.95*amp,time+0.006); oG.gain.exponentialRampToValueAtTime(0.001,time+0.20); osc.frequency.setValueAtTime(90,time); osc.frequency.exponentialRampToValueAtTime(55,time+0.18);
-        const nBuf=ctx.createBuffer(1, ctx.sampleRate*0.05, ctx.sampleRate); const d=nBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/d.length*6);
-        const noise=ctx.createBufferSource(); noise.buffer=nBuf; const nG=ctx.createGain(); nG.gain.setValueAtTime(0.15*amp,time); nG.gain.exponentialRampToValueAtTime(0.002,time+0.05);
-        const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=520; const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=28;
-        sub.connect(subG).connect(lp); osc.connect(oG).connect(lp); noise.connect(nG).connect(lp); lp.connect(hp).connect(this.bus.master);
-        sub.start(time); sub.stop(time+0.28); osc.start(time); osc.stop(time+0.24); noise.start(time); noise.stop(time+0.06);
+    class HeartbeatAudio {
+      constructor(bus) { this.bus = bus; this.on = false; this.nextTime = 0; this.period = 0.9; this.lookAhead = 0.10; this.horizon = 0.35; this.timer = null; }
+      async start() {
+        await this.bus.ensureRunning(); if (this.on) return; this.on = true;
+        const now = this.bus.ctx.currentTime + 0.05; this.nextTime = now;
+        this._thump(now, 1.0); this._thump(now + 0.30 * this.period, 0.55);
+        this.timer = setInterval(() => this._tick(), this.lookAhead * 1000);
+      }
+      stop() { if (!this.on) return; this.on = false; clearInterval(this.timer); this.timer = null; }
+      setPeriod(p) { this.period = Math.max(0.03, p); }
+      _tick() {
+        const ct = this.bus.ctx.currentTime;
+        while (this.nextTime < ct + this.horizon) {
+          const t1 = this.nextTime, t2 = t1 + 0.30 * this.period;
+          this._thump(t1, 1.0); this._thump(t2, 0.55);
+          this.nextTime += this.period;
+        }
+      }
+      _thump(time, amp = 1) {
+        const ctx = this.bus.ctx;
+        const sub = ctx.createOscillator(); sub.type = 'sine';
+        const subG = ctx.createGain(); subG.gain.setValueAtTime(0, time);
+        subG.gain.linearRampToValueAtTime(0.55 * amp, time + 0.005);
+        subG.gain.exponentialRampToValueAtTime(0.001, time + 0.24);
+        sub.frequency.setValueAtTime(36, time);
+        sub.frequency.exponentialRampToValueAtTime(30, time + 0.22);
+
+        const osc = ctx.createOscillator(); osc.type = 'sine';
+        const oG = ctx.createGain(); oG.gain.setValueAtTime(0, time);
+        oG.gain.linearRampToValueAtTime(0.95 * amp, time + 0.006);
+        oG.gain.exponentialRampToValueAtTime(0.001, time + 0.20);
+        osc.frequency.setValueAtTime(90, time);
+        osc.frequency.exponentialRampToValueAtTime(55, time + 0.18);
+
+        const nBuf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+        const d = nBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / d.length * 6);
+        const noise = ctx.createBufferSource(); noise.buffer = nBuf;
+        const nG = ctx.createGain(); nG.gain.setValueAtTime(0.15 * amp, time);
+        nG.gain.exponentialRampToValueAtTime(0.002, time + 0.05);
+
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 28;
+
+        sub.connect(subG).connect(lp); osc.connect(oG).connect(lp); noise.connect(nG).connect(lp);
+        lp.connect(hp).connect(this.bus.master);
+        sub.start(time); sub.stop(time + 0.28);
+        osc.start(time); osc.stop(time + 0.24);
+        noise.start(time); noise.stop(time + 0.06);
       }
     }
     const heartAudio = new HeartbeatAudio(audioBus);
 
     sndBtn.addEventListener('click', async () => {
-      if (!audioBus.on){ await audioBus.ensureRunning(); audioBus.on=true; }
-      if (!heartAudio.on){ await heartAudio.start(); sndBtn.textContent='SOUND: ON'; }
-      else { heartAudio.stop(); sndBtn.textContent='SOUND: OFF'; }
+      if (!audioBus.on) { await audioBus.ensureRunning(); audioBus.on = true; }
+      if (!heartAudio.on) { await heartAudio.start(); sndBtn.textContent = 'SOUND: ON'; }
+      else { heartAudio.stop(); sndBtn.textContent = 'SOUND: OFF'; }
     });
-    window.addEventListener('pointerdown', async () => { try{ await audioBus.ensureRunning(); await heartAudio.start(); sndBtn.textContent='SOUND: ON'; }catch(e){} }, { once:true });
-    window.addEventListener('keydown', async () => { try{ await audioBus.ensureRunning(); await heartAudio.start(); sndBtn.textContent='SOUND: ON'; }catch(e){} }, { once:true });
+    window.addEventListener('pointerdown', async () => { try { await audioBus.ensureRunning(); await heartAudio.start(); sndBtn.textContent = 'SOUND: ON'; } catch (e) { } }, { once: true });
+    window.addEventListener('keydown', async () => { try { await audioBus.ensureRunning(); await heartAudio.start(); sndBtn.textContent = 'SOUND: ON'; } catch (e) { } }, { once: true });
 
-    // ===== Input (tempo + one-off background glyph) =====
-    document.addEventListener('keydown', (e)=>{
+    // ===== Input (tempo + glyph) =====
+    document.addEventListener('keydown', (e) => {
+      // cooling 중엔 입력 무시
+      if (cooling) return;
+
       const now = performance.now();
-      if (lastKeyTime > 0){ const diff = now - lastKeyTime; emaIKI = (1 - EMA_A) * emaIKI + EMA_A * diff; }
+      if (lastKeyTime > 0) { const diff = now - lastKeyTime; emaIKI = (1 - EMA_A) * emaIKI + EMA_A * diff; }
       lastKeyTime = now;
       if (e.key && e.key.length === 1 && /\S/.test(e.key)) pendingChar = e.key;
     });
 
-    // ===== Background glyph outside heart =====
-    function spawnBgGlyphOutsideHeart(ch, R, cx, cy){
-      const size = 14 + Math.random() * 14;
-      const rot = (Math.random() - 0.5) * 0.6;
-      let x=0, y=0;
-      for (let i=0;i<16;i++){
-        x = Math.random() * CW; y = Math.random() * CH;
-        const dx=x-cx, dy=y-cy; if (dx*dx + dy*dy > R*R*1.10) break;
+    // ===== Background glyphs outside heart (burst) =====
+    function spawnBgGlyphOutsideHeart(ch, R, cx, cy, count = 5) {
+      for (let n = 0; n < count; n++) {
+        // 랜덤 위치(하트 외곽)
+        let x = 0, y = 0;
+        for (let i = 0; i < 16; i++) {
+          x = Math.random() * CW; y = Math.random() * CH;
+          const dx = x - cx, dy = y - cy; if (dx * dx + dy * dy > R * R * 1.10) break;
+        }
+        const size = 10 + Math.random() * 40;
+        const life = 0.7 + Math.random() * 1.0;
+        const rot = (Math.random() - 0.5) * 0.6;
+        const vx = (Math.random() - 0.5) * 26;
+        const vy = (Math.random() - 0.5) * 26;
+        bgGlyphs.push({ ch, x, y, vx, vy, size, alpha: 1.0, life, rot });
       }
-      bgGlyph = { ch, x, y, size, alpha:1.0, life:0.8, rot };
     }
 
     // ===== Debris & Reformers =====
-    function explode(cx, cy, ptsSnapshot){
-      const now = performance.now()/1000;
+    function explode(cx, cy, ptsSnapshot) {
+      const now = performance.now() / 1000;
       if (now - lastExplodeT < EXPLODE_COOLDOWN_S) return;
-      lastExplodeT = now; shattered = true; shatterTime = now; reformStartS = 0; heartAlpha = 0; cooling = true; coolUntil = 0;
+      lastExplodeT = now; shattered = true; shatterTime = now; reformStartS = 0; heartAlpha = 0; cooling = true;
+
       // mute heartbeat quickly on explode
       try {
         if (audioBus.ctx && audioBus.master) {
@@ -308,126 +381,154 @@
           g.setValueAtTime(g.value, t);
           g.linearRampToValueAtTime(0.0, t + 0.18);
         }
-      } catch (e) {}
+      } catch (e) { }
 
-      // outward debris (green mono palette)
-      for (let i=0;i<EXPLODE_PARTICLES;i++){
-        const ang = Math.random()*TAU; const spd = 240 + Math.random()*1000; const size = 12 + Math.random()*18;
-        const chSets = ["·",".","`","˚",",","o","0","-","~","=","+","*","*","!","^","#","%","@"]; const ch = chSets[Math.floor(Math.random()*chSets.length)];
+      // outward debris
+      for (let i = 0; i < EXPLODE_PARTICLES; i++) {
+        const ang = Math.random() * TAU; const spd = 240 + Math.random() * 1000; const size = 12 + Math.random() * 18;
+        const chSets = ["·", ".", "`", "˚", ",", "o", "0", "-", "~", "=", "+", "*", "*", "!", "^", "#", "%", "@"]; const ch = chSets[Math.floor(Math.random() * chSets.length)];
         debris.push({
-          x:cx, y:cy,
-          vx:Math.cos(ang)*spd,
-          vy:Math.sin(ang)*spd,
+          x: cx, y: cy,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd,
           ch, size,
-          color: `hsl(130 90% ${50 + Math.random()*20}%)`,
-          life: 2.6 + Math.random()*1.0
+          color: `hsl(130 80% ${45 + Math.random() * 12}%)`, // 좀 더 어두운 잔광
+          life: 2.6 + Math.random() * 1.0
         });
       }
 
-      // capture targets but do not start reform yet (wait until fully cooled)
+      // targets to reform (deferred)
       pendingTargets.length = 0;
-      for (let i=0;i<ptsSnapshot.length; i += Math.max(1, Math.floor(ptsSnapshot.length / REFORM_PARTICLES))) pendingTargets.push(ptsSnapshot[i]);
+      for (let i = 0; i < ptsSnapshot.length; i += Math.max(1, Math.floor(ptsSnapshot.length / REFORM_PARTICLES)))
+        pendingTargets.push(ptsSnapshot[i]);
       reformers.length = 0;
-      /* emaIKI bump disabled to allow quick re-explode */
     }
 
-    function updateAndDrawDebris(dt){
+    function updateAndDrawDebris(dt) {
       if (!debris.length) return;
       btx.save();
-      for (let i=debris.length-1;i>=0;i--){
-        const d=debris[i]; d.vy += GRAVITY * dt; d.x += d.vx*dt; d.y += d.vy*dt; d.life -= dt;
-        const a = clamp(d.life/2.0, 0, 1); if (a<=0 || d.y > CH + 120){ debris.splice(i,1); continue; }
-        btx.globalAlpha = a; btx.font = `${d.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
+      for (let i = debris.length - 1; i >= 0; i--) {
+        const d = debris[i];
+        d.vy += GRAVITY * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.life -= dt;
+        const a = clamp(d.life / 2.0, 0, 1);
+        if (a <= 0 || d.y > CH + 120) { debris.splice(i, 1); continue; }
+        btx.globalAlpha = a * 0.9;
+        btx.font = `${d.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
         btx.fillStyle = d.color; btx.fillText(d.ch, d.x, d.y);
       }
       btx.restore();
     }
 
-    function updateAndDrawReformers(dt, nowS){
+    function updateAndDrawReformers(dt, nowS) {
       if (!reformers.length) return;
       const tSince = nowS - (reformStartS || shatterTime);
       let reformProgress = clamp((tSince - REFORM_DELAY_S) / REFORM_DURATION_S, 0, 1);
       heartAlpha = smoothstep(reformProgress);
-      // restore heartbeat audio in sync with reform fade-in
+
+      // restore heartbeat audio with dimmer target
       try {
         if (audioBus.ctx && audioBus.master && heartAudio.on) {
           const t = audioBus.ctx.currentTime;
-          const target = audioBus.baseGain * heartAlpha;
+          const target = audioBus.baseGain * heartAlpha * 0.9;
           const g = audioBus.master.gain;
           g.cancelScheduledValues(t);
           g.setTargetAtTime(target, t, 0.08);
         }
-      } catch (e) {}
+      } catch (e) { }
+
       btx.save();
-      for (let i=reformers.length-1;i>=0;i--){
-        const r=reformers[i]; const k=2.0; r.vx += (r.tx - r.x)*k*dt; r.vy += (r.ty - r.y)*k*dt; const vMag=Math.hypot(r.vx,r.vy); const vMax=520; if (vMag>vMax){ r.vx*=vMax/vMag; r.vy*=vMax/vMag; }
-        r.x += r.vx*dt; r.y += r.vy*dt; r.life -= dt;
+      for (let i = reformers.length - 1; i >= 0; i--) {
+        const r = reformers[i];
+        const k = 2.0;
+        r.vx += (r.tx - r.x) * k * dt; r.vy += (r.ty - r.y) * k * dt;
+        const vMag = Math.hypot(r.vx, r.vy); const vMax = 520; if (vMag > vMax) { r.vx *= vMax / vMag; r.vy *= vMax / vMag; }
+        r.x += r.vx * dt; r.y += r.vy * dt; r.life -= dt;
         const toTarget = Math.hypot(r.tx - r.x, r.ty - r.y);
-        const a = clamp(1 - toTarget/200, 0.05, 1.0) * 0.9; btx.globalAlpha = a * 0.9;
+        const a = clamp(1 - toTarget / 200, 0.05, 1.0) * 0.9; btx.globalAlpha = a * 0.85;
         btx.font = `${r.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-        btx.fillStyle = `hsl(130 80% ${45 + 25*(1-a)}%)`;
+        btx.fillStyle = `hsl(130 70% ${42 + 20 * (1 - a)}%)`;
         btx.fillText(r.ch, r.x, r.y);
-        if (toTarget < 6 || r.life <= 0) reformers.splice(i,1);
+        if (toTarget < 6 || r.life <= 0) reformers.splice(i, 1);
       }
       btx.restore();
-      if (!reformers.length && heartAlpha >= 0.999){ shattered = false; heartAlpha = 1.0; cooling = false; 
-        try { if (audioBus.ctx && audioBus.master) { const t = audioBus.ctx.currentTime; const g = audioBus.master.gain; g.cancelScheduledValues(t); g.setTargetAtTime(audioBus.baseGain, t, 0.05); } } catch (e) {}
+
+      if (!reformers.length && heartAlpha >= 0.999) {
+        shattered = false; heartAlpha = 1.0; cooling = false;
+        try {
+          if (audioBus.ctx && audioBus.master) {
+            const t = audioBus.ctx.currentTime; const g = audioBus.master.gain;
+            g.cancelScheduledValues(t); g.setTargetAtTime(audioBus.baseGain * 0.9, t, 0.05);
+          }
+        } catch (e) { }
       }
     }
 
     // ===== Main timing =====
     let lastT = performance.now();
-    let acc = 0; const STEP = 1/60;
+    let acc = 0;
 
-    const COOL_BPM_TARGET = 70; // must cool below this before reform
+    const COOL_BPM_TARGET = 70;
 
-    function frame(dt){
-      const nowS = performance.now()/1000;
-      // safety: ensure we fully restore after total reform time
-      if (shattered && (nowS - shatterTime) > (REFORM_DELAY_S + REFORM_DURATION_S + 0.6)) { shattered = false; heartAlpha = 1.0; reformers.length = 0; cooling = false; }
-      const since = lastKeyTime ? (performance.now() - lastKeyTime) : Infinity; if (since > 40) emaIKI += (MAX_IKI - emaIKI) * (1 - Math.exp(-dt / IDLE_TAU));
-      // cooling phase: force tempo to idle and wait for audio to be silent
-      if (cooling){
-        const targetIKI = MAX_IKI * 1.8; // very slow
-        emaIKI += (targetIKI - emaIKI) * (1 - Math.exp(-dt / COOL_EXTRA_TAU_S));
-        heartAlpha = 0; // keep heart invisible
-        // compute temporary bpm with current period
-        const heartPeriodTmp = Math.max(0.03, (currentPeriod) * HEART_RATIO);
-        const bpmTmp = (1/heartPeriodTmp) * 60;
-        let audioSilenced = false;
-        try { audioSilenced = !!(audioBus.master && audioBus.master.gain.value <= 0.01); } catch(e){ audioSilenced = true; }
-        if (bpmTmp <= COOL_BPM_TARGET && audioSilenced && pendingTargets.length){
-          // start reform: spawn reformers from captured targets
-          const targets = pendingTargets.slice(); pendingTargets.length = 0;
-          for (let i=0;i<targets.length;i++){
-            const t = targets[i];
-            const side = Math.floor(Math.random()*4);
-            let sx=0, sy=0;
-            if (side===0){ sx = Math.random()*CW; sy = -30; }
-            else if (side===1){ sx = CW + 30; sy = Math.random()*CH; }
-            else if (side===2){ sx = Math.random()*CW; sy = CH + 30; }
-            else { sx = -30; sy = Math.random()*CH; }
-            const dx=t.sx - sx, dy=t.sy - sy; const dist=Math.hypot(dx,dy)||1; const spd=160+Math.random()*160;
-            const vx=dx/dist*spd, vy=dy/dist*spd; const size=12+Math.random()*10; const ch="*+=@#!%"[Math.floor(Math.random()*7)]||"*";
-            reformers.push({ x:sx, y:sy, vx, vy, tx:t.sx, ty:t.sy, ch, size, life: REFORM_DELAY_S + REFORM_DURATION_S });
-          }
-          reformStartS = performance.now()/1000;
-          cooling = false; // end cooling; audio will fade-in with reform
-        }
+    function frame(dt) {
+      const nowS = performance.now() / 1000;
+
+      // auto-restore guard
+      if (shattered && (nowS - shatterTime) > (REFORM_DELAY_S + REFORM_DURATION_S + 0.6)) {
+        shattered = false; heartAlpha = 1.0; reformers.length = 0; cooling = false;
       }
 
+      const since = lastKeyTime ? (performance.now() - lastKeyTime) : Infinity;
+      if (since > 40) emaIKI += (MAX_IKI - emaIKI) * (1 - Math.exp(-dt / IDLE_TAU));
+
+      // tempo
       const tRaw = (emaIKI - MIN_IKI) / (MAX_IKI - MIN_IKI);
       const targetP = lmap(tRaw, 0, 1, FAST_PERIOD, REST_PERIOD);
-      const targetPReform = targetP;
-      currentPeriod += (targetPReform - currentPeriod) * (1 - Math.exp(-dt / PERIOD_TAU));
+      currentPeriod += (targetP - currentPeriod) * (1 - Math.exp(-dt / PERIOD_TAU));
 
-      const fBreath = 1 / Math.max(0.03, currentPeriod); phaseBreath += TAU * fBreath * dt; if (phaseBreath > 1e6) phaseBreath -= 1e6;
-      const heartPeriod = Math.max(0.03, currentPeriod * HEART_RATIO); const fHeart = 1 / heartPeriod; phaseHeart += TAU * fHeart * dt; if (phaseHeart > 1e6) phaseHeart -= 1e6;
+      // breath & heart
+      const fBreath = 1 / Math.max(0.03, currentPeriod);
+      phaseBreath += TAU * fBreath * dt; if (phaseBreath > 1e6) phaseBreath -= 1e6;
+
+      const heartPeriod = Math.max(0.03, currentPeriod * HEART_RATIO); // ★ 선언 한 번만!
+      const fHeart = 1 / heartPeriod;
+      phaseHeart += TAU * fHeart * dt; if (phaseHeart > 1e6) phaseHeart -= 1e6;
       heartAudio.setPeriod(heartPeriod);
 
-      const hbRaw = cardiacSeries(phaseHeart); const HB_TAU = 0.12; hbEnv += (hbRaw - hbEnv) * (1 - Math.exp(-dt / HB_TAU));
+      const hbRaw = cardiacSeries(phaseHeart);
+      const HB_TAU = 0.12;
+      hbEnv += (hbRaw - hbEnv) * (1 - Math.exp(-dt / HB_TAU));
+
       const tempoNormRaw = (fBreath - 1 / REST_PERIOD) / (1 / FAST_PERIOD - 1 / REST_PERIOD);
       const tempoNorm = easeStep(clamp(tempoNormRaw, 0, 1), 0.35, 0.90);
+
+      // cooling: force very slow
+      if (cooling) {
+        const targetIKI = MAX_IKI * 1.8;
+        emaIKI += (targetIKI - emaIKI) * (1 - Math.exp(-dt / COOL_EXTRA_TAU_S));
+        heartAlpha = 0;
+
+        const bpmTmp = (1 / heartPeriod) * 60;
+        let audioSilenced = false;
+        try { audioSilenced = !!(audioBus.master && audioBus.master.gain.value <= 0.01); } catch (e) { audioSilenced = true; }
+        if (bpmTmp <= COOL_BPM_TARGET && audioSilenced && pendingTargets.length) {
+          // start reform
+          const targets = pendingTargets.slice(); pendingTargets.length = 0;
+          for (let i = 0; i < targets.length; i++) {
+            const t = targets[i];
+            const side = Math.floor(Math.random() * 4);
+            let sx = 0, sy = 0;
+            if (side === 0) { sx = Math.random() * CW; sy = -30; }
+            else if (side === 1) { sx = CW + 30; sy = Math.random() * CH; }
+            else if (side === 2) { sx = Math.random() * CW; sy = CH + 30; }
+            else { sx = -30; sy = Math.random() * CH; }
+            const dx = t.sx - sx, dy = t.sy - sy; const dist = Math.hypot(dx, dy) || 1; const spd = 160 + Math.random() * 160;
+            const vx = dx / dist * spd, vy = dy / dist * spd; const size = 12 + Math.random() * 10; const ch = "*+=@#!%"[Math.floor(Math.random() * 7)] || "*";
+            reformers.push({ x: sx, y: sy, vx, vy, tx: t.sx, ty: t.sy, ch, size, life: REFORM_DELAY_S + REFORM_DURATION_S });
+          }
+          reformStartS = performance.now() / 1000;
+          cooling = false;
+        }
+      }
 
       // Camera & shape
       const R0 = Math.min(CW, CH) * 0.36;
@@ -439,78 +540,102 @@
       const waveA = 0.045 + 0.017 * hbEnv + 0.010 * (0.5 + 0.5 * Math.sin(phaseBreath));
       const waveK1 = 3.0, waveK2 = 4.6; const wavePhase = 1.15 * phaseBreath + 0.45 * hbEnv;
 
-      const centerX = CW/2, centerY = CH/2;
+      const centerX = CW / 2, centerY = CH / 2;
 
       // Background layer
-      btx.clearRect(0,0,CW,CH);
+      btx.clearRect(0, 0, CW, CH);
 
-      if (pendingChar){ spawnBgGlyphOutsideHeart(pendingChar, R, centerX, centerY); pendingChar = null; }
-      if (bgGlyph){
-        btx.save(); btx.globalAlpha = bgGlyph.alpha * 0.9; btx.translate(bgGlyph.x, bgGlyph.y); btx.rotate(bgGlyph.rot);
-        btx.font = `${bgGlyph.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-        btx.fillStyle = `hsl(130 40% 52%)`;
-        btx.fillText(bgGlyph.ch, 0, 0); btx.restore();
-        bgGlyph.life -= dt; bgGlyph.alpha = Math.max(0, bgGlyph.life / 0.8); if (bgGlyph.alpha <= 0) bgGlyph = null;
+      if (!cooling && pendingChar) {
+        const speedBias = clamp(1 - (emaIKI - MIN_IKI) / (MAX_IKI - MIN_IKI), 0, 1);
+        const burst = 4 + Math.round(speedBias * 6); // 4~10
+        spawnBgGlyphOutsideHeart(pendingChar, R, centerX, centerY, burst);
+        pendingChar = null;
+      } else {
+        pendingChar = null;
       }
 
-      // Project points
+      // draw background glyphs (조금 더 어둡게)
+      if (bgGlyphs.length) {
+        btx.save();
+        for (let i = bgGlyphs.length - 1; i >= 0; i--) {
+          const g = bgGlyphs[i];
+          g.x += g.vx * dt; g.y += g.vy * dt; g.life -= dt;
+          const a = clamp(g.life / 1.2, 0, 1);
+          if (a <= 0) { bgGlyphs.splice(i, 1); continue; }
+          btx.globalAlpha = a * 0.8;
+          btx.save();
+          btx.translate(g.x, g.y);
+          btx.rotate(g.rot);
+          btx.font = `${g.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
+          btx.fillStyle = `hsl(130 38% 45%)`; // dimmer
+          btx.fillText(g.ch, 0, 0);
+          btx.restore();
+        }
+        btx.restore();
+      }
+
+      // project points
       const pts = [];
-      for (let k=0;k<base.length;k++){
+      for (let k = 0; k < base.length; k++) {
         const { th, ph, idx } = base[k];
         let x = Math.sin(th) * Math.cos(ph);
         let y = Math.cos(th);
         let z = Math.sin(th) * Math.sin(ph);
         const wv = waveA * (0.7 * Math.sin(waveK1 * th + wavePhase) + 0.5 * Math.sin(waveK2 * ph - 0.8 * wavePhase));
         const rr = 1 + wv; x *= rr; y *= rr; z *= rr;
-        let X=x, Y=y, Z=z, c, s;
-        c=Math.cos(rotY); s=Math.sin(rotY); let x1=c*X + s*Z, z1=-s*X + c*Z; X=x1; Z=z1;
-        c=Math.cos(rotX); s=Math.sin(rotX); let y1=c*Y - s*Z, z2=s*Y + c*Z; Y=y1; Z=z2;
-        c=Math.cos(rotZ); s=Math.sin(rotZ); let x2=c*X - s*Y, y2=s*X + c*Y; X=x2; Y=y2;
+        let X = x, Y = y, Z = z, c, s;
+        c = Math.cos(rotY); s = Math.sin(rotY); let x1 = c * X + s * Z, z1 = -s * X + c * Z; X = x1; Z = z1;
+        c = Math.cos(rotX); s = Math.sin(rotX); let y1 = c * Y - s * Z, z2 = s * Y + c * Z; Y = y1; Z = z2;
+        c = Math.cos(rotZ); s = Math.sin(rotZ); let x2 = c * X - s * Y, y2 = s * X + c * Y; X = x2; Y = y2;
         const zc = Z * R, f = camZ / (camZ - zc);
         const sx = centerX + X * R * f, sy = centerY + Y * R * f;
         pts.push({ sx, sy, f, Y, idx });
       }
-      pts.sort((a,b)=>a.f - b.f);
+      pts.sort((a, b) => a.f - b.f);
 
-      // Draw heart in mono-green palette
-      btx.save(); btx.globalAlpha = shattered ? heartAlpha : 1.0;
-      for (let i=0;i<pts.length;i++){
+      // draw heart — dimmer palette & alpha
+      btx.save();
+      btx.globalAlpha = (shattered ? heartAlpha : 1.0) * 0.85; // 전체 하트 알파 다운
+      for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
         const facing = clamp((p.f - 0.8) / 0.6, 0, 1);
         const ripple = 0.5 + 0.5 * Math.sin(5.6 * (p.sx * 0.002 + p.sy * 0.002) + 1.0 * phaseBreath);
         const intensity = clamp(0.40 + 0.45 * facing + 0.22 * ripple, 0, 1);
         const h = hash01(p.idx);
-        const L = clamp(40 + 35 * intensity, 35, 85);  // brightness only
+        const L = clamp(28 + 22 * intensity, 20, 62); // ★ 밝기 낮춤 (기존 40~85 → 28~62)
         const color = `hsl(130 92% ${L.toFixed(0)}%)`;
         setBucketFontFromF(p.f); btx.fillStyle = color;
-        const ch = pickHeartChar(intensity, clamp(tempoNormRaw,0,1), h);
+        const ch = pickHeartChar(intensity, clamp(tempoNormRaw, 0, 1), h);
         btx.fillText(ch, p.sx, p.sy);
       }
       btx.restore();
 
-      // Explosion logic
-      const bpm = (1/heartPeriod) * 60; if (!shattered && bpm >= EXPLODE_BPM) explode(centerX, centerY, pts);
+      // Explosion logic (heartPeriod 재선언 없이 기존 값 사용)
+      const bpm = (1 / heartPeriod) * 60;
+      if (!shattered && bpm >= EXPLODE_BPM) explode(centerX, centerY, pts);
 
       updateAndDrawDebris(dt);
       if (shattered) updateAndDrawReformers(dt, nowS);
 
-      // Compose on black + soft green glow
-      ctx.fillStyle = '#000000'; ctx.fillRect(0,0,CW,CH);
+      // compose with softer glow
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(buf, 0, 0);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.filter = 'blur(22px)'; ctx.globalAlpha = 0.20 + 0.40 * hbEnv; ctx.drawImage(buf, 0, 0);
-      ctx.filter = 'blur(10px)'; ctx.globalAlpha = 0.12 + 0.28 * hbEnv; ctx.drawImage(buf, 0, 0);
+      ctx.filter = 'blur(22px)'; ctx.globalAlpha = 0.08 + 0.22 * hbEnv; ctx.drawImage(buf, 0, 0); // dimmer
+      ctx.filter = 'blur(10px)'; ctx.globalAlpha = 0.05 + 0.15 * hbEnv; ctx.drawImage(buf, 0, 0); // dimmer
       ctx.restore();
 
-      const label = shattered ? (cooling ? `cooling… · ${bpm.toFixed(0)} bpm` : `reforming… · ${bpm.toFixed(0)} bpm`) : `breath ${(1/Math.max(0.03,currentPeriod)).toFixed(2)} Hz · ${bpm.toFixed(0)} bpm`;
+      const label = shattered
+        ? (cooling ? `cooling… · ${bpm.toFixed(0)} bpm` : `reforming… · ${bpm.toFixed(0)} bpm`)
+        : `breath ${(1 / Math.max(0.03, currentPeriod)).toFixed(2)} Hz · ${bpm.toFixed(0)} bpm`;
       hud.textContent = label;
     }
 
-    function loop(){
+    function loop() {
       const now = performance.now();
-      let dt = (now - lastT)/1000; lastT = now; if (dt > 0.2) dt = 0.2; acc += dt;
-      while(!paused && acc >= 1/60){ frame(1/60); acc -= 1/60; }
+      let dt = (now - lastT) / 1000; lastT = now; if (dt > 0.2) dt = 0.2; acc += dt;
+      while (!paused && acc >= 1 / 60) { frame(1 / 60); acc -= 1 / 60; }
       requestAnimationFrame(loop);
     }
 
@@ -518,4 +643,5 @@
     fit(); loop();
   </script>
 </body>
+
 </html>
