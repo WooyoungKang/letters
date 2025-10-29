@@ -106,10 +106,7 @@
       inset: 0;
       pointer-events: none;
       background: repeating-linear-gradient(to bottom,
-          rgba(0, 255, 136, 0.04),
-          rgba(0, 255, 136, 0.04) 1px,
-          transparent 1px,
-          transparent 3px);
+          rgba(0, 255, 136, .04), rgba(0, 255, 136, .04) 1px, transparent 1px, transparent 3px);
       mix-blend-mode: screen;
     }
   </style>
@@ -130,16 +127,10 @@
     // ===== Tunables =====
     const REST_PERIOD = 4.0, FAST_PERIOD = 0.6;
     const MIN_IKI = 120, MAX_IKI = 2200, EMA_A = 0.22;
-    const IDLE_TAU = 10.0;
-    const PERIOD_TAU = 2.5;
-    const HEART_RATIO = 0.45;
-    const EXPLODE_BPM = 180;
-    const EXPLODE_COOLDOWN_S = 2.0;
-    const REFORM_DELAY_S = 0.5;
-    const REFORM_DURATION_S = 4.5;
-    const COOL_EXTRA_TAU_S = 3.0;
-    const EXPLODE_PARTICLES = 420;
-    const REFORM_PARTICLES = 220;
+    const IDLE_TAU = 10.0, PERIOD_TAU = 2.5;
+    const HEART_RATIO = 0.45, EXPLODE_BPM = 180;
+    const EXPLODE_COOLDOWN_S = 2.0, REFORM_DELAY_S = 0.5, REFORM_DURATION_S = 4.5;
+    const COOL_EXTRA_TAU_S = 3.0, EXPLODE_PARTICLES = 420, REFORM_PARTICLES = 220;
     const GRAVITY = 900;
 
     // ===== DOM =====
@@ -152,12 +143,11 @@
     // ===== State =====
     let lastKeyTime = 0, emaIKI = 900;
     let currentPeriod = REST_PERIOD;
-    let phaseBreath = 0, phaseHeart = 0;
-    let hbEnv = 0;
+    let phaseBreath = 0, phaseHeart = 0, hbEnv = 0;
     let paused = false;
 
     const TAU = Math.PI * 2;
-    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const lmap = (v, a, b, c, d) => c + (d - c) * ((v - a) / (b - a));
     const smoothstep = (x) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
 
@@ -166,25 +156,16 @@
     const buf = document.createElement('canvas');
     const btx = buf.getContext('2d', { alpha: true });
 
-    // Typed glyph burst
-    let pendingChar = null;
-    let bgGlyphs = []; // [{ch,x,y,vx,vy,size,alpha,life,rot}]
+    // glyphs & particles
+    let pendingChar = null, bgGlyphs = [];
+    let debris = [], reformers = [], pendingTargets = [];
+    let lastExplodeT = -Infinity, shattered = false, shatterTime = 0, reformStartS = 0;
+    let heartAlpha = 1.0, cooling = false;
 
-    // Debris & reformers
-    let debris = [];
-    let reformers = [];
-    let pendingTargets = [];
-    let lastExplodeT = -Infinity;
-    let shattered = false;
-    let shatterTime = 0; let reformStartS = 0;
-    let heartAlpha = 1.0;
+    // === NEW: user sound intent ===
+    let wantSound = false;   // 사용자가 ON을 눌렀을 때만 true
 
-    let cooling = false;
-
-    const easeStep = (t, a = 0.35, b = 0.90) => {
-      const x = Math.min(1, Math.max(0, (t - a) / (b - a)));
-      return x * x * (3 - 2 * x);
-    };
+    const easeStep = (t, a = 0.35, b = 0.90) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
     function hash01(i) { const s = Math.sin(i * 12.9898) * 43758.5453; return s - Math.floor(s); }
 
     const CALM = ["·", ".", "`", "˚", ",", "o", "0", "0", "0"];
@@ -196,8 +177,7 @@
         const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
         return (intensity > 0.85 && h > 0.9) ? MID[Math.floor(h * MID.length)] : CALM[idxC];
       } else if (excite < 0.66) {
-        const wC = 1 - (excite - 0.33) / 0.33;
-        const wM = 0.5; const pick = h;
+        const wC = 1 - (excite - 0.33) / 0.33, wM = 0.5, pick = h;
         if (pick < wC * 0.6) {
           const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
           return CALM[idxC];
@@ -241,67 +221,80 @@
       btx.textBaseline = 'middle';
     }
     addEventListener('resize', fit);
-    document.addEventListener('visibilitychange', async () => {
-      paused = document.hidden;
-      // 탭 복귀 시 오디오 컨텍스트도 복구
-      if (!paused) await ensureAudioStarted();
-    });
-
-    // ===== Fonts =====
-    const setFontBucket = (bucket) => {
-      const size = Math.round(FONT_BASE * (0.85 + 0.22 * bucket));
-      btx.font = `${size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-    };
-    function setBucketFontFromF(f) {
-      const bucket = (f < 1.05) ? 0 : (f < 1.25) ? 1 : 2;
-      setFontBucket(bucket);
-    }
+    document.addEventListener('visibilitychange', handlePageVisibility);
+    addEventListener('pageshow', handlePageVisibility);
+    addEventListener('pagehide', handlePageVisibility);
 
     // ===== Heart signal =====
     function cardiacSeries(t) {
-      const y = 0.44
-        + 0.36 * Math.cos(t - 0.05)
-        + 0.22 * Math.cos(2 * t - 1.2)
-        + 0.11 * Math.cos(3 * t - 0.4)
-        + 0.06 * Math.cos(4 * t - 0.9);
+      const y = 0.44 + 0.36 * Math.cos(t - 0.05) + 0.22 * Math.cos(2 * t - 1.2)
+        + 0.11 * Math.cos(3 * t - 0.4) + 0.06 * Math.cos(4 * t - 0.9);
       return Math.pow(Math.max(0, y), 1.20);
     }
 
     // ===== Audio =====
     class AudioBus {
-      constructor() { this.ctx = null; this.master = null; this.baseGain = 0.55; }
+      constructor() { this.ctx = null; this.master = null; this.baseGain = 0.55; this.unlocked = false; }
       async init() {
         if (this.ctx) return;
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
         this.master = this.ctx.createGain();
         this.master.gain.value = this.baseGain;
         this.master.connect(this.ctx.destination);
+        this.ctx.addEventListener?.('statechange', () => {
+          // 상태가 바뀌어도 사용자의 의도를 우선
+          sndBtn.textContent = wantSound && this.isRunning() ? 'SOUND: ON' : 'SOUND: OFF';
+        });
+      }
+      async unlock() {
+        await this.init();
+        if (this.unlocked) return;
+        const buf = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+        const src = this.ctx.createBufferSource(); src.buffer = buf;
+        src.connect(this.ctx.destination);
+        try { src.start(0); src.stop(0); this.unlocked = true; } catch (e) { }
       }
       async resume() {
         await this.init();
         if (this.ctx.state !== 'running') {
-          try { await this.ctx.resume(); } catch (e) { /* ignore */ }
+          try { await this.ctx.resume(); } catch (e) { }
         }
       }
+      async suspend() {
+        if (this.ctx && this.ctx.state === 'running') {
+          try { await this.ctx.suspend(); } catch (e) { }
+        }
+      }
+      isRunning() { return this.ctx && this.ctx.state === 'running'; }
     }
     const audioBus = new AudioBus();
 
     class HeartbeatAudio {
       constructor(bus) { this.bus = bus; this.on = false; this.nextTime = 0; this.period = 0.9; this.lookAhead = 0.10; this.horizon = 0.35; this.timer = null; }
       async start() {
-        await this.bus.resume();
-        if (this.on) return;
+        await audioBus.unlock(); await audioBus.resume();
+        if (this.on) { this._rebaseSchedule(); return; }
         this.on = true;
         const now = this.bus.ctx.currentTime + 0.05;
         this.nextTime = now;
-        this._thump(now, 1.0);
-        this._thump(now + 0.30 * this.period, 0.55);
+        this._thump(now, 1.0); this._thump(now + 0.30 * this.period, 0.55);
         this.timer = setInterval(() => this._tick(), this.lookAhead * 1000);
       }
-      stop() { if (!this.on) return; this.on = false; clearInterval(this.timer); this.timer = null; }
+      stop() {
+        if (!this.on) return;
+        this.on = false;
+        clearInterval(this.timer); this.timer = null;
+      }
       setPeriod(p) { this.period = Math.max(0.03, p); }
+      _rebaseSchedule() {
+        if (!this.bus.ctx) return;
+        const now = this.bus.ctx.currentTime + 0.05;
+        this.nextTime = Math.max(this.nextTime, now);
+      }
       _tick() {
+        if (!this.bus.ctx || !audioBus.isRunning() || !this.on) return;
         const ct = this.bus.ctx.currentTime;
+        if (this.nextTime < ct) this._rebaseSchedule();
         while (this.nextTime < ct + this.horizon) {
           const t1 = this.nextTime, t2 = t1 + 0.30 * this.period;
           this._thump(t1, 1.0); this._thump(t2, 0.55);
@@ -309,10 +302,8 @@
         }
       }
       _thump(time, amp = 1) {
-        if (!this.bus.ctx || !this.bus.master) return;
-
+        if (!this.bus.ctx || !this.bus.master || !this.on) return;
         const ctx = this.bus.ctx;
-        // Sub
         const sub = ctx.createOscillator(); sub.type = 'sine';
         const subG = ctx.createGain(); subG.gain.setValueAtTime(0, time);
         subG.gain.linearRampToValueAtTime(0.55 * amp, time + 0.005);
@@ -320,7 +311,6 @@
         sub.frequency.setValueAtTime(36, time);
         sub.frequency.exponentialRampToValueAtTime(30, time + 0.22);
 
-        // Mid
         const osc = ctx.createOscillator(); osc.type = 'sine';
         const oG = ctx.createGain(); oG.gain.setValueAtTime(0, time);
         oG.gain.linearRampToValueAtTime(0.95 * amp, time + 0.006);
@@ -328,7 +318,6 @@
         osc.frequency.setValueAtTime(90, time);
         osc.frequency.exponentialRampToValueAtTime(55, time + 0.18);
 
-        // Click/noise
         const nDur = 0.05;
         const nBuf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * nDur)), ctx.sampleRate);
         const d = nBuf.getChannelData(0);
@@ -352,33 +341,84 @@
     }
     const heartAudio = new HeartbeatAudio(audioBus);
 
-    // --- FIX: 확실한 오디오 언락 루틴 ---
-    async function unlockWithSilentClick() {
-      // iOS/사파리 호환을 위해 아주 짧은 무음 버퍼를 재생
-      await audioBus.resume();
-      const ctx = audioBus.ctx;
-      const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
-      const src = ctx.createBufferSource(); src.buffer = buf;
-      src.connect(ctx.destination); // 직접 destination으로 연결해 확실히 언락
-      try { src.start(0); } catch (e) { }
-      try { src.stop(0); } catch (e) { }
-    }
-
-    async function ensureAudioStarted() {
-      await unlockWithSilentClick();
+    // ===== Start/Stop (TOGGLE) =====
+    async function startAudio() {
+      wantSound = true;
       await heartAudio.start();
+      if (audioBus.master) {
+        const t = audioBus.ctx.currentTime;
+        const g = audioBus.master.gain;
+        g.cancelScheduledValues(t);
+        g.setTargetAtTime(audioBus.baseGain * 0.9, t, 0.05);
+      }
       sndBtn.textContent = 'SOUND: ON';
     }
+    async function stopAudio() {
+      wantSound = false;
+      // 페이드 아웃
+      try {
+        if (audioBus.master && audioBus.ctx) {
+          const t = audioBus.ctx.currentTime;
+          const g = audioBus.master.gain;
+          g.cancelScheduledValues(t);
+          g.setValueAtTime(g.value, t);
+          g.linearRampToValueAtTime(0.0, t + 0.12);
+        }
+      } catch (e) { }
+      heartAudio.stop();
+      // 약간의 시간 뒤 컨텍스트 절전
+      setTimeout(() => { audioBus.suspend(); }, 250);
+      sndBtn.textContent = 'SOUND: OFF';
+    }
 
-    // 버튼/화면/키다운—모두 같은 스타터 사용
-    sndBtn.addEventListener('click', ensureAudioStarted);
-    window.addEventListener('pointerdown', ensureAudioStarted, { once: true });
-    window.addEventListener('touchstart', ensureAudioStarted, { once: true, passive: true });
-    window.addEventListener('keydown', ensureAudioStarted, { once: true });
+    // 버튼 토글
+    sndBtn.addEventListener('click', async () => {
+      if (wantSound) { await stopAudio(); }
+      else { await startAudio(); }
+    });
+
+    // 사용자 제스처: unlock/resume만; 실제 재생은 wantSound가 true일 때만
+    function gestureBoot() {
+      audioBus.unlock().then(() => audioBus.resume()).then(() => {
+        if (wantSound && !heartAudio.on) startAudio();
+      });
+    }
+    window.addEventListener('pointerdown', gestureBoot);
+    window.addEventListener('touchstart', gestureBoot, { passive: true });
+    window.addEventListener('keydown', gestureBoot);
+
+    // 탭 가시성/복귀 처리
+    function handlePageVisibility() {
+      paused = document.hidden;
+      if (!document.hidden) {
+        if (wantSound) startAudio();
+      }
+    }
+
+    // 1초 워치독: 사용자의 의도를 존중해서 복구/음소거 유지
+    setInterval(async () => {
+      await audioBus.init();
+      if (wantSound) {
+        if (!audioBus.isRunning() || !heartAudio.on) startAudio();
+      } else {
+        // OFF 유지: 게인이 올라가 있으면 끌어내린다
+        try {
+          if (audioBus.master) {
+            const g = audioBus.master.gain.value;
+            if (g > 0.001) {
+              const t = audioBus.ctx.currentTime;
+              audioBus.master.gain.cancelScheduledValues(t);
+              audioBus.master.gain.setTargetAtTime(0.0, t, 0.05);
+            }
+          }
+        } catch (e) { }
+      }
+      sndBtn.textContent = wantSound && audioBus.isRunning() ? 'SOUND: ON' : 'SOUND: OFF';
+    }, 1000);
 
     // ===== Input (tempo + glyph) =====
     document.addEventListener('keydown', (e) => {
-      if (cooling) return; // cooling 중엔 입력 무시
+      if (cooling) return;
       const now = performance.now();
       if (lastKeyTime > 0) { const diff = now - lastKeyTime; emaIKI = (1 - EMA_A) * emaIKI + EMA_A * diff; }
       lastKeyTime = now;
@@ -408,31 +448,26 @@
       if (now - lastExplodeT < EXPLODE_COOLDOWN_S) return;
       lastExplodeT = now; shattered = true; shatterTime = now; reformStartS = 0; heartAlpha = 0; cooling = true;
 
-      // 폭발 시 하트비트 신속 음소거
-      try {
-        if (audioBus.ctx && audioBus.master) {
-          const t = audioBus.ctx.currentTime;
-          const g = audioBus.master.gain;
-          g.cancelScheduledValues(t);
-          g.setValueAtTime(g.value, t);
-          g.linearRampToValueAtTime(0.0, t + 0.18);
-        }
-      } catch (e) { }
+      // 폭발 시 강한 음소거 (ON 상태에서만)
+      if (wantSound) {
+        try {
+          if (audioBus.ctx && audioBus.master) {
+            const t = audioBus.ctx.currentTime;
+            const g = audioBus.master.gain;
+            g.cancelScheduledValues(t);
+            g.setValueAtTime(g.value, t);
+            g.linearRampToValueAtTime(0.0, t + 0.18);
+          }
+        } catch (e) { }
+      }
 
       for (let i = 0; i < EXPLODE_PARTICLES; i++) {
         const ang = Math.random() * TAU; const spd = 240 + Math.random() * 1000; const size = 12 + Math.random() * 18;
-        const chSets = ["·", ".", "`", "˚", ",", "o", "0", "-", "~", "=", "+", "*", "*", "!", "^", "#", "%", "@"]; const ch = chSets[Math.floor(Math.random() * chSets.length)];
-        debris.push({
-          x: cx, y: cy,
-          vx: Math.cos(ang) * spd,
-          vy: Math.sin(ang) * spd,
-          ch, size,
-          color: `hsl(130 80% ${45 + Math.random() * 12}%)`,
-          life: 2.6 + Math.random() * 1.0
-        });
+        const chSets = ["·", ".", "`", "˚", ",", "o", "0", "-", "~", "=", "+", "*", "*", "!", "^", "#", "%", "@"];
+        const ch = chSets[Math.floor(Math.random() * chSets.length)];
+        debris.push({ x: cx, y: cy, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, ch, size, color: `hsl(130 80% ${45 + Math.random() * 12}%)`, life: 2.6 + Math.random() * 1.0 });
       }
 
-      // targets to reform (deferred)
       pendingTargets.length = 0;
       for (let i = 0; i < ptsSnapshot.length; i += Math.max(1, Math.floor(ptsSnapshot.length / REFORM_PARTICLES)))
         pendingTargets.push(ptsSnapshot[i]);
@@ -460,23 +495,26 @@
       let reformProgress = clamp((tSince - REFORM_DELAY_S) / REFORM_DURATION_S, 0, 1);
       heartAlpha = smoothstep(reformProgress);
 
-      // 복구 중엔 마스터 게인도 서서히 복귀
-      try {
-        if (audioBus.ctx && audioBus.master && heartAudio.on) {
-          const t = audioBus.ctx.currentTime;
-          const target = audioBus.baseGain * heartAlpha * 0.9;
-          const g = audioBus.master.gain;
-          g.cancelScheduledValues(t);
-          g.setTargetAtTime(target, t, 0.08);
-        }
-      } catch (e) { }
+      // 복구 중 볼륨 복귀 (ON일 때만)
+      if (wantSound) {
+        try {
+          if (audioBus.ctx && audioBus.master && heartAudio.on) {
+            const t = audioBus.ctx.currentTime;
+            const target = audioBus.baseGain * heartAlpha * 0.9;
+            const g = audioBus.master.gain;
+            g.cancelScheduledValues(t);
+            g.setTargetAtTime(target, t, 0.08);
+          }
+        } catch (e) { }
+      }
 
       btx.save();
       for (let i = reformers.length - 1; i >= 0; i--) {
         const r = reformers[i];
         const k = 2.0;
         r.vx += (r.tx - r.x) * k * dt; r.vy += (r.ty - r.y) * k * dt;
-        const vMag = Math.hypot(r.vx, r.vy); const vMax = 520; if (vMag > vMax) { r.vx *= vMax / vMag; r.vy *= vMax / vMag; }
+        const vMag = Math.hypot(r.vx, r.vy); const vMax = 520;
+        if (vMag > vMax) { r.vx *= vMax / vMag; r.vy *= vMax / vMag; }
         r.x += r.vx * dt; r.y += r.vy * dt; r.life -= dt;
         const toTarget = Math.hypot(r.tx - r.x, r.ty - r.y);
         const a = clamp(1 - toTarget / 200, 0.05, 1.0) * 0.9; btx.globalAlpha = a * 0.85;
@@ -489,19 +527,19 @@
 
       if (!reformers.length && heartAlpha >= 0.999) {
         shattered = false; heartAlpha = 1.0; cooling = false;
-        try {
-          if (audioBus.ctx && audioBus.master) {
-            const t = audioBus.ctx.currentTime; const g = audioBus.master.gain;
-            g.cancelScheduledValues(t); g.setTargetAtTime(audioBus.baseGain * 0.9, t, 0.05);
-          }
-        } catch (e) { }
+        if (wantSound) {
+          try {
+            if (audioBus.ctx && audioBus.master) {
+              const t = audioBus.ctx.currentTime; const g = audioBus.master.gain;
+              g.cancelScheduledValues(t); g.setTargetAtTime(audioBus.baseGain * 0.9, t, 0.05);
+            }
+          } catch (e) { }
+        }
       }
     }
 
     // ===== Main timing =====
-    let lastT = performance.now();
-    let acc = 0;
-
+    let lastT = performance.now(), acc = 0;
     const COOL_BPM_TARGET = 70;
 
     function frame(dt) {
@@ -537,7 +575,6 @@
         const targetIKI = MAX_IKI * 1.8;
         emaIKI += (targetIKI - emaIKI) * (1 - Math.exp(-dt / COOL_EXTRA_TAU_S));
         heartAlpha = 0;
-
         const bpmTmp = (1 / heartPeriod) * 60;
         let audioSilenced = false;
         try { audioSilenced = !!(audioBus.master && audioBus.master.gain.value <= 0.01); } catch (e) { audioSilenced = true; }
@@ -560,7 +597,7 @@
         }
       }
 
-      // Camera & shape
+      // Camera & draw
       const R0 = Math.min(CW, CH) * 0.36;
       const R = R0 * (1.00 + 0.060 * hbEnv + 0.010 * Math.sin(phaseBreath - 0.4));
       const camZ = R0 * 2.6;
@@ -568,11 +605,9 @@
       const rotX = 0.14 * Math.sin(phaseBreath * 0.9 + 0.8);
       const rotZ = 0.06 * Math.sin(phaseBreath * 0.5 - 0.3);
       const waveA = 0.045 + 0.017 * hbEnv + 0.010 * (0.5 + 0.5 * Math.sin(phaseBreath));
-      const waveK1 = 3.0, waveK2 = 4.6; const wavePhase = 1.15 * phaseBreath + 0.45 * hbEnv;
+      const waveK1 = 3.0, waveK2 = 4.6, wavePhase = 1.15 * phaseBreath + 0.45 * hbEnv;
 
       const centerX = CW / 2, centerY = CH / 2;
-
-      // Background layer
       btx.clearRect(0, 0, CW, CH);
 
       if (!cooling && pendingChar) {
@@ -580,9 +615,7 @@
         const burst = 4 + Math.round(speedBias * 6);
         spawnBgGlyphOutsideHeart(pendingChar, R, centerX, centerY, burst);
         pendingChar = null;
-      } else {
-        pendingChar = null;
-      }
+      } else { pendingChar = null; }
 
       if (bgGlyphs.length) {
         btx.save();
@@ -591,14 +624,9 @@
           g.x += g.vx * dt; g.y += g.vy * dt; g.life -= dt;
           const a = clamp(g.life / 1.2, 0, 1);
           if (a <= 0) { bgGlyphs.splice(i, 1); continue; }
-          btx.globalAlpha = a * 0.8;
-          btx.save();
-          btx.translate(g.x, g.y);
-          btx.rotate(g.rot);
+          btx.globalAlpha = a * 0.8; btx.save(); btx.translate(g.x, g.y); btx.rotate(g.rot);
           btx.font = `${g.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-          btx.fillStyle = `hsl(130 38% 45%)`;
-          btx.fillText(g.ch, 0, 0);
-          btx.restore();
+          btx.fillStyle = `hsl(130 38% 45%)`; btx.fillText(g.ch, 0, 0); btx.restore();
         }
         btx.restore();
       }
@@ -607,9 +635,7 @@
       const pts = [];
       for (let k = 0; k < base.length; k++) {
         const { th, ph, idx } = base[k];
-        let x = Math.sin(th) * Math.cos(ph);
-        let y = Math.cos(th);
-        let z = Math.sin(th) * Math.sin(ph);
+        let x = Math.sin(th) * Math.cos(ph), y = Math.cos(th), z = Math.sin(th) * Math.sin(ph);
         const wv = waveA * (0.7 * Math.sin(waveK1 * th + wavePhase) + 0.5 * Math.sin(waveK2 * ph - 0.8 * wavePhase));
         const rr = 1 + wv; x *= rr; y *= rr; z *= rr;
         let X = x, Y = y, Z = z, c, s;
@@ -622,7 +648,7 @@
       }
       pts.sort((a, b) => a.f - b.f);
 
-      // draw heart
+      // draw heart (dimmer)
       btx.save();
       btx.globalAlpha = (shattered ? heartAlpha : 1.0) * 0.85;
       for (let i = 0; i < pts.length; i++) {
@@ -634,18 +660,18 @@
         const L = clamp(28 + 22 * intensity, 20, 62);
         const color = `hsl(130 92% ${L.toFixed(0)}%)`;
         setBucketFontFromF(p.f); btx.fillStyle = color;
-        const ch = pickHeartChar(intensity, clamp(tempoNormRaw, 0, 1), h);
+        const ch = pickHeartChar(intensity, clamp((1 / Math.max(0.03, currentPeriod) - 1 / REST_PERIOD) / (1 / FAST_PERIOD - 1 / REST_PERIOD), 0, 1), h);
         btx.fillText(ch, p.sx, p.sy);
       }
       btx.restore();
 
-      const bpm = (1 / heartPeriod) * 60;
+      const bpm = (1 / Math.max(0.03, currentPeriod * HEART_RATIO)) * 60;
       if (!shattered && bpm >= EXPLODE_BPM) explode(centerX, centerY, pts);
 
       updateAndDrawDebris(dt);
       if (shattered) updateAndDrawReformers(dt, nowS);
 
-      // compose
+      // compose glow
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(buf, 0, 0);
       ctx.save();
@@ -655,9 +681,15 @@
       ctx.restore();
 
       const label = shattered
-        ? (cooling ? `cooling… · ${bpm.toFixed(0)} bpm` : `reforming… · ${bpm.toFixed(0)} bpm`)
-        : `breath ${(1 / Math.max(0.03, currentPeriod)).toFixed(2)} Hz · ${bpm.toFixed(0)} bpm`;
-      hud.textContent = label;
+        ? (cooling ? `cooling…` : `reforming…`)
+        : `breath ${(1 / Math.max(0.03, currentPeriod)).toFixed(2)} Hz`;
+      hud.textContent = `${label} · ${bpm.toFixed(0)} bpm`;
+    }
+
+    function setBucketFontFromF(f) {
+      const bucket = (f < 1.05) ? 0 : (f < 1.25) ? 1 : 2;
+      const size = Math.round(FONT_BASE * (0.85 + 0.22 * bucket));
+      btx.font = `${size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
     }
 
     function loop() {
@@ -670,7 +702,6 @@
     // ---- start ----
     fit(); loop();
   </script>
-
 </body>
 
 </html>
