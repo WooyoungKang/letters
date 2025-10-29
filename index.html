@@ -243,7 +243,7 @@
     addEventListener('resize', fit);
     document.addEventListener('visibilitychange', async () => {
       paused = document.hidden;
-      // when returning to tab, ensure audio is alive again
+      // 탭 복귀 시 오디오 컨텍스트도 복구
       if (!paused) await ensureAudioStarted();
     });
 
@@ -352,14 +352,14 @@
     }
     const heartAudio = new HeartbeatAudio(audioBus);
 
-    // --- FIX: robust audio unlock routine ---
+    // --- FIX: 확실한 오디오 언락 루틴 ---
     async function unlockWithSilentClick() {
-      // tiny silent buffer for iOS/Safari to unlock the context
+      // iOS/사파리 호환을 위해 아주 짧은 무음 버퍼를 재생
       await audioBus.resume();
       const ctx = audioBus.ctx;
       const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
       const src = ctx.createBufferSource(); src.buffer = buf;
-      src.connect(ctx.destination); // connect directly to ensure unlock
+      src.connect(ctx.destination); // 직접 destination으로 연결해 확실히 언락
       try { src.start(0); } catch (e) { }
       try { src.stop(0); } catch (e) { }
     }
@@ -370,7 +370,7 @@
       sndBtn.textContent = 'SOUND: ON';
     }
 
-    // unified starters
+    // 버튼/화면/키다운—모두 같은 스타터 사용
     sndBtn.addEventListener('click', ensureAudioStarted);
     window.addEventListener('pointerdown', ensureAudioStarted, { once: true });
     window.addEventListener('touchstart', ensureAudioStarted, { once: true, passive: true });
@@ -378,9 +378,7 @@
 
     // ===== Input (tempo + glyph) =====
     document.addEventListener('keydown', (e) => {
-      // ignore input while cooling
-      if (cooling) return;
-
+      if (cooling) return; // cooling 중엔 입력 무시
       const now = performance.now();
       if (lastKeyTime > 0) { const diff = now - lastKeyTime; emaIKI = (1 - EMA_A) * emaIKI + EMA_A * diff; }
       lastKeyTime = now;
@@ -390,7 +388,6 @@
     // ===== Background glyphs outside heart (burst) =====
     function spawnBgGlyphOutsideHeart(ch, R, cx, cy, count = 5) {
       for (let n = 0; n < count; n++) {
-        // random position outside the heart
         let x = 0, y = 0;
         for (let i = 0; i < 16; i++) {
           x = Math.random() * CW; y = Math.random() * CH;
@@ -411,7 +408,7 @@
       if (now - lastExplodeT < EXPLODE_COOLDOWN_S) return;
       lastExplodeT = now; shattered = true; shatterTime = now; reformStartS = 0; heartAlpha = 0; cooling = true;
 
-      // mute heartbeat quickly on explode
+      // 폭발 시 하트비트 신속 음소거
       try {
         if (audioBus.ctx && audioBus.master) {
           const t = audioBus.ctx.currentTime;
@@ -422,7 +419,6 @@
         }
       } catch (e) { }
 
-      // outward debris
       for (let i = 0; i < EXPLODE_PARTICLES; i++) {
         const ang = Math.random() * TAU; const spd = 240 + Math.random() * 1000; const size = 12 + Math.random() * 18;
         const chSets = ["·", ".", "`", "˚", ",", "o", "0", "-", "~", "=", "+", "*", "*", "!", "^", "#", "%", "@"]; const ch = chSets[Math.floor(Math.random() * chSets.length)];
@@ -464,7 +460,7 @@
       let reformProgress = clamp((tSince - REFORM_DELAY_S) / REFORM_DURATION_S, 0, 1);
       heartAlpha = smoothstep(reformProgress);
 
-      // bring master gain back smoothly while reforming
+      // 복구 중엔 마스터 게인도 서서히 복귀
       try {
         if (audioBus.ctx && audioBus.master && heartAudio.on) {
           const t = audioBus.ctx.currentTime;
@@ -511,7 +507,6 @@
     function frame(dt) {
       const nowS = performance.now() / 1000;
 
-      // auto-restore guard
       if (shattered && (nowS - shatterTime) > (REFORM_DELAY_S + REFORM_DURATION_S + 0.6)) {
         shattered = false; heartAlpha = 1.0; reformers.length = 0; cooling = false;
       }
@@ -519,16 +514,14 @@
       const since = lastKeyTime ? (performance.now() - lastKeyTime) : Infinity;
       if (since > 40) emaIKI += (MAX_IKI - emaIKI) * (1 - Math.exp(-dt / IDLE_TAU));
 
-      // tempo
       const tRaw = (emaIKI - MIN_IKI) / (MAX_IKI - MIN_IKI);
       const targetP = lmap(tRaw, 0, 1, FAST_PERIOD, REST_PERIOD);
       currentPeriod += (targetP - currentPeriod) * (1 - Math.exp(-dt / PERIOD_TAU));
 
-      // breath & heart
       const fBreath = 1 / Math.max(0.03, currentPeriod);
       phaseBreath += TAU * fBreath * dt; if (phaseBreath > 1e6) phaseBreath -= 1e6;
 
-      const heartPeriod = Math.max(0.03, currentPeriod * HEART_RATIO); // declared once
+      const heartPeriod = Math.max(0.03, currentPeriod * HEART_RATIO);
       const fHeart = 1 / heartPeriod;
       phaseHeart += TAU * fHeart * dt; if (phaseHeart > 1e6) phaseHeart -= 1e6;
       heartAudio.setPeriod(heartPeriod);
@@ -540,7 +533,6 @@
       const tempoNormRaw = (fBreath - 1 / REST_PERIOD) / (1 / FAST_PERIOD - 1 / REST_PERIOD);
       const tempoNorm = easeStep(clamp(tempoNormRaw, 0, 1), 0.35, 0.90);
 
-      // cooling: enforce very slow & silence until cooled
       if (cooling) {
         const targetIKI = MAX_IKI * 1.8;
         emaIKI += (targetIKI - emaIKI) * (1 - Math.exp(-dt / COOL_EXTRA_TAU_S));
@@ -550,7 +542,6 @@
         let audioSilenced = false;
         try { audioSilenced = !!(audioBus.master && audioBus.master.gain.value <= 0.01); } catch (e) { audioSilenced = true; }
         if (bpmTmp <= COOL_BPM_TARGET && audioSilenced && pendingTargets.length) {
-          // start reform
           const targets = pendingTargets.slice(); pendingTargets.length = 0;
           for (let i = 0; i < targets.length; i++) {
             const t = targets[i];
@@ -586,14 +577,13 @@
 
       if (!cooling && pendingChar) {
         const speedBias = clamp(1 - (emaIKI - MIN_IKI) / (MAX_IKI - MIN_IKI), 0, 1);
-        const burst = 4 + Math.round(speedBias * 6); // 4~10
+        const burst = 4 + Math.round(speedBias * 6);
         spawnBgGlyphOutsideHeart(pendingChar, R, centerX, centerY, burst);
         pendingChar = null;
       } else {
         pendingChar = null;
       }
 
-      // draw background glyphs (dimmer)
       if (bgGlyphs.length) {
         btx.save();
         for (let i = bgGlyphs.length - 1; i >= 0; i--) {
@@ -606,7 +596,7 @@
           btx.translate(g.x, g.y);
           btx.rotate(g.rot);
           btx.font = `${g.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-          btx.fillStyle = `hsl(130 38% 45%)`; // dimmer
+          btx.fillStyle = `hsl(130 38% 45%)`;
           btx.fillText(g.ch, 0, 0);
           btx.restore();
         }
@@ -632,16 +622,16 @@
       }
       pts.sort((a, b) => a.f - b.f);
 
-      // draw heart — dimmer palette & alpha
+      // draw heart
       btx.save();
-      btx.globalAlpha = (shattered ? heartAlpha : 1.0) * 0.85; // make the heart a bit dimmer
+      btx.globalAlpha = (shattered ? heartAlpha : 1.0) * 0.85;
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i];
         const facing = clamp((p.f - 0.8) / 0.6, 0, 1);
         const ripple = 0.5 + 0.5 * Math.sin(5.6 * (p.sx * 0.002 + p.sy * 0.002) + 1.0 * phaseBreath);
         const intensity = clamp(0.40 + 0.45 * facing + 0.22 * ripple, 0, 1);
         const h = hash01(p.idx);
-        const L = clamp(28 + 22 * intensity, 20, 62); // lowered brightness
+        const L = clamp(28 + 22 * intensity, 20, 62);
         const color = `hsl(130 92% ${L.toFixed(0)}%)`;
         setBucketFontFromF(p.f); btx.fillStyle = color;
         const ch = pickHeartChar(intensity, clamp(tempoNormRaw, 0, 1), h);
@@ -649,14 +639,13 @@
       }
       btx.restore();
 
-      // trigger explosion
       const bpm = (1 / heartPeriod) * 60;
       if (!shattered && bpm >= EXPLODE_BPM) explode(centerX, centerY, pts);
 
       updateAndDrawDebris(dt);
       if (shattered) updateAndDrawReformers(dt, nowS);
 
-      // compose with softer glow
+      // compose
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(buf, 0, 0);
       ctx.save();
@@ -681,6 +670,7 @@
     // ---- start ----
     fit(); loop();
   </script>
+
 </body>
 
 </html>
