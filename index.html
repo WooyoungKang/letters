@@ -305,13 +305,14 @@
       function makeRow(labels) {
         var row = document.createElement('div');
         row.className = 'kbd-row';
-        labels.forEach(function (lbl) {
+        for (var i = 0; i < labels.length; i++) {
+          var lbl = labels[i];
           var el = document.createElement('div');
           el.className = 'key off';
           el.dataset.label = lbl;
           el.textContent = lbl;
           row.appendChild(el);
-        });
+        }
         return row;
       }
       function refreshKeyboardUI() {
@@ -403,7 +404,7 @@
         var extra = Math.max(0, total - baseCount);
         if (ruleEl) ruleEl.textContent = 'Rule  B[' + Bmin + '-' + Bmax + '] / S[' + Smin + '-' + Smax + ']   |   Neighbors: base ' + baseCount + ' + keys ' + extra + ' = ' + total + (ALIGN_MOORE ? '  [Aligned]' : '  [Physical]');
         var bs = document.getElementById('bs');
-        if (bs) bs.textContent = 'B[' + Bmin + '-' + Bmax + ']  S[' + Smin + '-' + Smax + ']  (max ' + total + ')';
+        if (bs) bs.textContent = 'B[' + Bmin + '-' + Bmax + ']  S[' + Smin + '-' + Smax + ']  (neighbors ' + total + ', cap 29)';
         syncBoxes();
       }
       function setStatus(t) { if (statusEl) statusEl.textContent = t + ' | step:' + STEP_MS + 'ms | async:' + Math.round(ASYNC_RATE * 100) + '%' }
@@ -473,19 +474,21 @@
       function $(id) { return document.getElementById(id) }
       function clampN(v) {
         v |= 0;
-        var M = Math.max(0, buildOffsets().length);
-        if (v < 0) v = 0; if (v > M) v = M; return v;
+        var CAP = 29; // 3x10 keyboard minus center
+        if (v < 0) v = 0;
+        if (v > CAP) v = CAP;
+        return v;
       }
       function fixBounds() { if (Bmin > Bmax) Bmax = Bmin; if (Smin > Smax) Smax = Smin }
       function syncBoxes() {
         var bm = $('bmin'), bx = $('bmax'), sm = $('smin'), sx = $('smax');
-        var M = Math.max(0, buildOffsets().length);
+        var CAP = 29; // allow up to full keyboard neighborhood (no 8-cap)
         var arr = [bm, bx, sm, sx];
-        for (var i = 0; i < arr.length; i++) { var el = arr[i]; if (el) { el.setAttribute('max', String(M)); } }
-        if (bm) bm.value = Math.min(Bmin, M);
-        if (bx) bx.value = Math.min(Bmax, M);
-        if (sm) sm.value = Math.min(Smin, M);
-        if (sx) sx.value = Math.min(Smax, M);
+        for (var i = 0; i < arr.length; i++) { var el = arr[i]; if (el) { el.setAttribute('max', String(CAP)); } }
+        if (bm) bm.value = Math.min(Bmin, CAP);
+        if (bx) bx.value = Math.min(Bmax, CAP);
+        if (sm) sm.value = Math.min(Smin, CAP);
+        if (sx) sx.value = Math.min(Smax, CAP);
       }
       function bindBoxes() {
         var bm = $('bmin'), bx = $('bmax'), sm = $('smin'), sx = $('smax');
@@ -549,6 +552,14 @@
         results.push(assert('Boxes reflect B range', okB));
         results.push(assert('Boxes reflect S range', okS));
         Bmin = oldBmin; Bmax = oldBmax; Smin = oldSmin; Smax = oldSmax; syncBoxes(); updateRuleLabel();
+
+        // Added tests: CAP behavior
+        var cap = 29;
+        var bminEl = document.getElementById('bmin');
+        var capOk = bminEl && String(bminEl.getAttribute('max')) === String(cap);
+        results.push(assert('Boxes max cap == 29', !!capOk));
+        var clampOk = (function () { var v1 = clampN(999), v2 = clampN(-5); return v1 === cap && v2 === 0; })();
+        results.push(assert('clampN clamps to [0,29]', clampOk));
 
         var summary = [];
         for (var k = 0; k < results.length; k++) {
