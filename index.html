@@ -1,50 +1,201 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>QWERTY-Kernel Cellular Automata — DOS Theme</title>
-<style>
-  :root{ --bg:#000; --fg:#e6e6e6; --dim:#777; --accent:#e6e6e6 }
-  *{ box-sizing:border-box }
-  html,body{ height:100%; overflow:hidden }
-  body{
-    margin:0; background:var(--bg); color:var(--fg);
-    font:13px "Perfect DOS VGA 437 Win","IBM VGA 8x16","PxPlus_IBM_VGA8","Px437 IBM VGA8","Fixedsys","Terminal","Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing:0; user-select:none; -webkit-user-select:none;
-  }
-  .app{ height:100dvh; display:grid; grid-template-columns:1fr; grid-template-rows:1fr auto; gap:12px; padding:12px }
-  .panel{ padding:10px; display:flex; flex-direction:column; gap:10px; background:#000 }
-  canvas{ display:block; image-rendering:pixelated; background:#000 }
-  .mono{ font-family:inherit }
-  .kbd{ display:grid; grid-template-rows:repeat(3,1fr); gap:6px; margin-top:6px }
-  .kbd-row{ display:grid; grid-auto-flow:column; gap:6px; justify-content:center }
-  .key{ min-width:16px; padding:2px 3px; font-size:11px; text-align:center; color:var(--fg); cursor:pointer }
-  .on{ background:var(--accent); color:#000 }
-  .off{ background:#000; color:var(--dim) }
-  .small{ font-size:11px; opacity:1; letter-spacing:0; text-transform:uppercase }
-  .tests{ color:var(--fg); font-size:11px; opacity:1; line-height:1.35; white-space:pre }
-  /* 상단 패널(제목/상태) 숨겨 CA 공간 극대화 */
-  #left .title, #left .row, #left #testsTop{ display:none !important }
-  /* 푸터 좌우 분할: 왼쪽(설명·B/S·픽커), 오른쪽(키보드) */
-  #footer{ justify-self:stretch; align-self:end; max-height:30vh; overflow:auto; opacity:.95; display:flex; flex-direction:row; align-items:flex-start; gap:12px }
-  #footer-left{ flex:1; min-width:0; display:flex; flex-direction:column; gap:8px }
-  #footer-right{ width:260px; flex:0 0 260px }
-  /* Range picker (mouse only, no sliders) */
-  .picker{ display:grid; grid-template-columns:auto 1fr; gap:6px 8px; align-items:center }
-  .picker .label{ text-transform:uppercase; font-size:12px }
-  .line{ display:grid; grid-auto-flow:column; gap:4px }
-  .cell{ width:18px; height:18px; display:inline-grid; place-items:center; font-size:11px; color:var(--dim); background:#000; cursor:pointer }
-  .cell.active{ background:var(--fg); color:#000 }
-  .cell:hover{ outline:1px dashed var(--fg) }
-  /* Range boxes (no sliders) */
-  .ibox{ display:grid; grid-auto-rows:auto; gap:2px 2px; align-items:center }
-  .ibox .label{ text-transform:uppercase; font-size:11px; margin-right:0 }
-  .ibox input{ width:30px; padding:1px 2px; font:inherit; background:#000; color:var(--fg); border:1px solid #555; outline:none }
-  .ibox input:focus{ border-color:#aaa }
-  .ibox .sep{ opacity:.7; margin:0 1px }
-  .ibox-row{ display:inline-flex; align-items:center; gap:2px }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QWERTY-Kernel Cellular Automata — DOS Theme</title>
+  <style>
+    :root {
+      --bg: #070d18;
+      --fg: #d6deea;
+      --dim: #7f8aa1;
+      --accent: #86cbbd;
+      --cell: #bfc9d9
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      height: 100%;
+      overflow: hidden
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 13px "Perfect DOS VGA 437 Win", "IBM VGA 8x16", "PxPlus_IBM_VGA8", "Px437 IBM VGA8", "Fixedsys", "Terminal", "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .app {
+      height: 100dvh;
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr auto;
+      gap: 12px;
+      padding: 12px
+    }
+
+    .panel {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--bg)
+    }
+
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      background: var(--bg)
+    }
+
+    .mono {
+      font-family: inherit
+    }
+
+    .kbd {
+      display: grid;
+      grid-template-rows: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 6px
+    }
+
+    .kbd-row {
+      display: grid;
+      grid-auto-flow: column;
+      gap: 6px;
+      justify-content: center
+    }
+
+    .key {
+      min-width: 16px;
+      padding: 2px 3px;
+      font-size: 11px;
+      text-align: center;
+      color: var(--fg);
+      cursor: pointer
+    }
+
+    .on {
+      background: var(--cell);
+      color: #000
+    }
+
+    .off {
+      background: var(--bg);
+      color: var(--dim)
+    }
+
+    .small {
+      font-size: 11px;
+      opacity: 1;
+      letter-spacing: 0;
+      text-transform: uppercase
+    }
+
+    .tests {
+      color: var(--fg);
+      font-size: 11px;
+      opacity: 1;
+      line-height: 1.35;
+      white-space: pre
+    }
+
+    /* 상단 패널(제목/상태) 숨겨 CA 공간 극대화 */
+    #left .title,
+    #left .row,
+    #left #testsTop {
+      display: none !important
+    }
+
+    /* 푸터 좌우 분할: 왼쪽(설명·B/S 박스), 오른쪽(키보드) */
+    #footer {
+      justify-self: stretch;
+      align-self: end;
+      max-height: 30vh;
+      overflow: auto;
+      opacity: .95;
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      gap: 12px
+    }
+
+    #footer-left {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    #footer-right {
+      width: 260px;
+      flex: 0 0 260px
+    }
+
+    /* 숫자 박스 입력(슬라이더 없음) */
+    .ibox {
+      display: grid;
+      grid-auto-rows: auto;
+      gap: 2px 2px;
+      align-items: center
+    }
+
+    .ibox .label {
+      text-transform: uppercase;
+      font-size: 11px;
+      margin-right: 0
+    }
+
+    .ibox input {
+      width: 30px;
+      padding: 1px 2px;
+      font: inherit;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid #5a667a;
+      outline: none
+    }
+
+    .ibox input:focus {
+      border-color: #aaa
+    }
+
+    .ibox .sep {
+      opacity: .7;
+      margin: 0 1px
+    }
+
+    .ibox-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px
+    }
+
+    /* center the canvas perfectly within the left panel */
+    #left {
+      display: grid;
+      place-items: center;
+      padding: 0;
+      background: var(--bg)
+    }
+
+    #left>canvas {
+      justify-self: center;
+      align-self: center
+    }
+  </style>
 </head>
+
 <body>
   <div class="app">
     <div class="panel" id="left">
@@ -59,20 +210,21 @@
 
     <div class="panel" id="footer">
       <div id="footer-left" class="mono">
-        <div class="small" style="text-transform:uppercase;">active keys=white | center=g | space: play/pause | enter: reseed | shift+r: conway | -/= speed | use mouse to set birth/survival (click/drag on 0..8)</div>
-        <div id="bs" class="mono">B[3-3]  S[2-3]</div>
+        <div class="small" style="text-transform:uppercase;">active keys=white | center=g | space: play/pause | enter:
+          reseed | shift+r: conway | -/= speed | set birth/survival with the boxes</div>
+        <div id="bs" class="mono">B[3-3] S[2-3]</div>
         <div id="ibox" class="ibox mono">
           <div class="ibox-row">
             <div class="label">Birth</div>
-            <input id="bmin" type="number" min="0" max="8" step="1" value="3" />
+            <input id="bmin" type="number" min="0" step="1" value="3" />
             <div class="sep">~</div>
-            <input id="bmax" type="number" min="0" max="8" step="1" value="3" />
+            <input id="bmax" type="number" min="0" step="1" value="3" />
           </div>
           <div class="ibox-row">
             <div class="label">Surv</div>
-            <input id="smin" type="number" min="0" max="8" step="1" value="2" />
+            <input id="smin" type="number" min="0" step="1" value="2" />
             <div class="sep">~</div>
-            <input id="smax" type="number" min="0" max="8" step="1" value="3" />
+            <input id="smax" type="number" min="0" step="1" value="3" />
           </div>
         </div>
         <div id="tests" class="tests mono"></div>
@@ -83,346 +235,369 @@
     </div>
   </div>
 
-<script>
-(function(){
-  // ====== Canvas & Grid sizing ======
-  var cvs = document.getElementById('ca');
-  var ctx = cvs.getContext('2d');
-  ctx.imageSmoothingEnabled = false;
+  <script>
+    (function () {
+      "use strict";
+      // ===== CSS 색 추출(팔레트 일치) =====
+      function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+      var COLOR_BG = css('--bg') || '#070d18';
+      var COLOR_CELL = css('--cell') || css('--fg') || '#d6deea';
 
-  // Higher resolution (smaller cell -> more cells)
-  var CELL_SIZE = 2; // finer resolution for more organic feel
-  var GRID_W = 0, GRID_H = 0;
-  var STEP_MS = 120; // slower default
+      // ===== Canvas & Grid =====
+      var cvs = document.getElementById('ca');
+      var ctx = cvs.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
 
-  // Exact Moore alignment around 'g'
-  var ALIGN_MOORE = true;
+      var CELL_SIZE = 2;         // 더 높은 해상도(유기적)
+      var GRID_W = 0, GRID_H = 0;
+      var STEP_MS = 120;         // 느리게
+      var ALIGN_MOORE = true;    // g 중심으로 정확한 Moore 정렬
 
-  // Organic tweaks
-  var ASYNC_RATE = 0.7; // fraction of cells updated per step
-  var PBIRTH = 0.90;    // birth probability when condition satisfied
-  var PSURV  = 0.98;    // survival probability when condition satisfied
+      // 유기적 업데이트(비동기/확률)
+      var ASYNC_RATE = 0.7;
+      var PBIRTH = 0.90;
+      var PSURV = 0.98;
 
-  // Seed densities
-  var INIT_PROB = 0.18;   // on load
-  var RESEED_PROB = 0.08; // Enter reseed (sparser)
+      // 시드 밀도
+      var INIT_PROB = 0.18;      // 초기
+      var RESEED_PROB = 0.08;    // Enter
 
-  // Conway B3/S23
-  var Bmin=3, Bmax=3, Smin=2, Smax=3;
+      // Conway B3/S23
+      var Bmin = 3, Bmax = 3, Smin = 2, Smax = 3;
 
-  // ====== QWERTY mapping as 3x10 uniform grid (center=g) ======
-  var rowQ = ['q','w','e','r','t','y','u','i','o','p'];
-  var rowA = ['a','s','d','f','g','h','j','k','l',';'];
-  var rowZ = ['z','x','c','v','b','n','m',',','.','/'];
+      // ===== QWERTY 3x10 균등 그리드(중심=g) =====
+      var rowQ = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'];
+      var rowA = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'];
+      var rowZ = ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/'];
 
-  var codesQ = ['KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY','KeyU','KeyI','KeyO','KeyP'];
-  var codesA = ['KeyA','KeyS','KeyD','KeyF','KeyG','KeyH','KeyJ','KeyK','KeyL','Semicolon'];
-  var codesZ = ['KeyZ','KeyX','KeyC','KeyV','KeyB','KeyN','KeyM','Comma','Period','Slash'];
+      var codesQ = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP'];
+      var codesA = ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'];
+      var codesZ = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'Slash'];
 
-  // columns relative to 'g' at 0 (uniform 3x10 grid, not physical spacing)
-  var dx = [-4,-3,-2,-1,0,1,2,3,4,5];
-  var dxQ = dx.slice(), dxA = dx.slice(), dxZ = dx.slice();
+      var dx = [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
+      var dxQ = dx.slice(), dxA = dx.slice(), dxZ = dx.slice();
 
-  var CENTER_LABEL = 'g';
+      var CENTER_LABEL = 'g';
 
-  var labelToOffset = {}, codeToLabel = {};
-  rowQ.forEach(function(label,i){ labelToOffset[label]={dx:dxQ[i],dy:-1}; codeToLabel[codesQ[i]]=label; });
-  rowA.forEach(function(label,i){ labelToOffset[label]={dx:dxA[i],dy: 0}; codeToLabel[codesA[i]]=label; });
-  rowZ.forEach(function(label,i){ labelToOffset[label]={dx:dxZ[i],dy:+1}; codeToLabel[codesZ[i]]=label; });
+      var labelToOffset = {}, codeToLabel = {};
+      rowQ.forEach(function (label, i) { labelToOffset[label] = { dx: dxQ[i], dy: -1 }; codeToLabel[codesQ[i]] = label; });
+      rowA.forEach(function (label, i) { labelToOffset[label] = { dx: dxA[i], dy: 0 }; codeToLabel[codesA[i]] = label; });
+      rowZ.forEach(function (label, i) { labelToOffset[label] = { dx: dxZ[i], dy: +1 }; codeToLabel[codesZ[i]] = label; });
 
-  // Exact Moore for 8 around 'g'
-  var mooreMap = {
-    r:{dx:-1,dy:-1}, t:{dx:0,dy:-1}, y:{dx:1,dy:-1},
-    f:{dx:-1,dy: 0},                   h:{dx:1,dy: 0},
-    v:{dx:-1,dy: 1}, b:{dx:0,dy: 1}, n:{dx:1,dy: 1}
-  };
+      // 정확한 Moore 8 매핑
+      var mooreMap = {
+        r: { dx: -1, dy: -1 }, t: { dx: 0, dy: -1 }, y: { dx: 1, dy: -1 },
+        f: { dx: -1, dy: 0 }, h: { dx: 1, dy: 0 },
+        v: { dx: -1, dy: 1 }, b: { dx: 0, dy: 1 }, n: { dx: 1, dy: 1 }
+      };
 
-  // For tests
-  var BASE_OFFSETS = [
-    [-1,-1],[0,-1],[1,-1],
-    [-1, 0],        [1, 0],
-    [-1, 1],[0, 1],[1, 1]
-  ];
+      var BASE_OFFSETS = [
+        [-1, -1], [0, -1], [1, -1],
+        [-1, 0], [1, 0],
+        [-1, 1], [0, 1], [1, 1]
+      ];
 
-  // Active labels / base labels
-  var activeKeys = new Set();
-  var baseLabels = new Set();
+      var activeKeys = new Set();
+      var baseLabels = new Set();
 
-  // ====== UI: Keyboard grid ======
-  var kbdRoot = document.getElementById('kbd');
-  function makeRow(labels){
-    var row = document.createElement('div');
-    row.className = 'kbd-row';
-    labels.forEach(function(lbl){
-      var el = document.createElement('div');
-      el.className = 'key off';
-      el.dataset.label = lbl;
-      el.textContent = lbl;
-      row.appendChild(el);
-    });
-    return row;
-  }
-  function refreshKeyboardUI(){
-    Array.prototype.forEach.call(kbdRoot.querySelectorAll('.key'), function(el){
-      var lbl = el.dataset.label;
-      var on = activeKeys.has(lbl);
-      el.classList.toggle('on', on);
-      el.classList.toggle('off', !on);
-    });
-  }
-  function buildKeyboardUI(){
-    kbdRoot.innerHTML='';
-    [rowQ,rowA,rowZ].forEach(function(r){ kbdRoot.appendChild(makeRow(r)); });
-    refreshKeyboardUI();
-  }
-  buildKeyboardUI();
-
-  // ====== Base labels (Conway 8) ======
-  function computeBaseLabels(){
-    baseLabels.clear();
-    ['r','t','y','h','n','b','v','f'].forEach(function(lbl){ if(labelToOffset[lbl]) baseLabels.add(lbl); });
-  }
-  computeBaseLabels();
-  ['r','t','y','h','n','b','v','f'].forEach(function(lbl){ if(labelToOffset[lbl]) activeKeys.add(lbl); });
-  refreshKeyboardUI();
-
-  function resetToConway(){
-    activeKeys.clear();
-    ['r','t','y','h','n','b','v','f'].forEach(function(lbl){ if(labelToOffset[lbl]) activeKeys.add(lbl); });
-    Bmin=3; Bmax=3; Smin=2; Smax=3; ALIGN_MOORE=true;
-    refreshKeyboardUI(); updateRuleLabel(); if (!running) draw();
-  }
-
-  // click toggle (g blocked)
-  kbdRoot.addEventListener('click', function(e){
-    var keyEl = e.target.closest('.key');
-    if(!keyEl) return;
-    var lbl = keyEl.dataset.label;
-    if(lbl === CENTER_LABEL) return; // g 고정
-    toggleLabel(lbl);
-  });
-
-  function toggleLabel(lbl){
-    if(lbl === CENTER_LABEL) return;
-    if(!labelToOffset[lbl]) return;
-    if(activeKeys.has(lbl)) activeKeys.delete(lbl); else activeKeys.add(lbl);
-    refreshKeyboardUI(); updateRuleLabel(); if(!running) draw();
-  }
-
-  // ====== Grid ======
-  var grid = new Uint8Array(0);
-  var gridNext = new Uint8Array(0);
-  function idx(x,y){ return y*GRID_W + x }
-  function wrapX(x){ if(x<0) return x+GRID_W; if(x>=GRID_W) return x-GRID_W; return x }
-  function wrapY(y){ if(y<0) return y+GRID_H; if(y>=GRID_H) return y-GRID_H; return y }
-  function clearGrid(){ grid.fill(0); gridNext.fill(0) }
-  function randomizeGrid(prob){
-    if(typeof prob !== 'number') prob = INIT_PROB;
-    var live=0; for(var i=0;i<grid.length;i++){ var v=(Math.random()<prob)?1:0; grid[i]=v; live+=v }
-    setStatus((running?'RUNNING':'PAUSED')+' | grid:'+GRID_W+'x'+GRID_H+' | live:'+live);
-    return live;
-  }
-
-  // ====== Neighborhood ======
-  function buildOffsets(){
-    var seen = new Set(), uniq = [];
-    activeKeys.forEach(function(lbl){
-      var off = (ALIGN_MOORE && mooreMap[lbl]) ? mooreMap[lbl] : labelToOffset[lbl];
-      if(!off) return;
-      var dx = off.dx, dy = off.dy;
-      if(dx===0 && dy===0) return;
-      var k = dx+','+dy; if(!seen.has(k)){ seen.add(k); uniq.push([dx,dy]) }
-    });
-    return uniq;
-  }
-
-  // ====== UI status ======
-  var ruleEl = document.getElementById('rule');
-  var statusEl = document.getElementById('status');
-  function updateRuleLabel(){
-    var offs = buildOffsets();
-    var total = offs.length;
-    var baseCount = 0; baseLabels.forEach(function(lbl){ if(activeKeys.has(lbl)) baseCount++ });
-    var extra = Math.max(0, total - baseCount);
-    if (ruleEl) ruleEl.textContent = 'Rule  B['+Bmin+'-'+Bmax+'] / S['+Smin+'-'+Smax+']   |   Neighbors: base '+baseCount+' + keys '+extra+' = '+total + (ALIGN_MOORE?'  [Aligned]':'  [Physical]');
-    var bs = document.getElementById('bs');
-    if (bs) bs.textContent = 'B['+Bmin+'-'+Bmax+']  S['+Smin+'-'+Smax+']';
-    // sync picker UI
-    syncBoxes();
-  }
-  function setStatus(t){ if(statusEl) statusEl.textContent = t+' | step:'+STEP_MS+'ms | async:'+Math.round(ASYNC_RATE*100)+'%' }
-  updateRuleLabel(); setStatus('PAUSED');
-
-  // ====== Step & Draw ======
-  function step(){
-    var offsets = buildOffsets(); var nlen = offsets.length;
-    for(var y=0;y<GRID_H;y++){
-      for(var x=0;x<GRID_W;x++){
-        if(Math.random() > ASYNC_RATE){ gridNext[idx(x,y)] = grid[idx(x,y)]; continue }
-        var cnt=0; for(var i=0;i<nlen;i++){ var nx=wrapX(x+offsets[i][0]), ny=wrapY(y+offsets[i][1]); cnt += grid[idx(nx,ny)] }
-        var alive = grid[idx(x,y)]===1;
-        var born = (!alive) && (cnt>=Bmin && cnt<=Bmax) && (Math.random()<PBIRTH);
-        var stay = ( alive) && (cnt>=Smin && cnt<=Smax) && (Math.random()<PSURV);
-        gridNext[idx(x,y)] = (born||stay)?1:0;
+      // ===== 키보드 UI =====
+      var kbdRoot = document.getElementById('kbd');
+      function makeRow(labels) {
+        var row = document.createElement('div');
+        row.className = 'kbd-row';
+        labels.forEach(function (lbl) {
+          var el = document.createElement('div');
+          el.className = 'key off';
+          el.dataset.label = lbl;
+          el.textContent = lbl;
+          row.appendChild(el);
+        });
+        return row;
       }
-    }
-    var tmp=grid; grid=gridNext; gridNext=tmp;
-  }
-  function draw(){
-    ctx.fillStyle = '#000'; ctx.fillRect(0,0,cvs.width,cvs.height);
-    ctx.fillStyle = '#e6e6e6';
-    for(var y=0;y<GRID_H;y++){
-      for(var x=0;x<GRID_W;x++) if(grid[idx(x,y)]) ctx.fillRect(x*CELL_SIZE,y*CELL_SIZE,CELL_SIZE,CELL_SIZE)
-    }
-  }
+      function refreshKeyboardUI() {
+        var nodes = kbdRoot.querySelectorAll('.key');
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          var lbl = el.dataset.label;
+          var on = activeKeys.has(lbl);
+          if (on) { el.classList.add('on'); el.classList.remove('off'); }
+          else { el.classList.add('off'); el.classList.remove('on'); }
+        }
+      }
+      function buildKeyboardUI() {
+        kbdRoot.innerHTML = '';
+        [rowQ, rowA, rowZ].forEach(function (r) { kbdRoot.appendChild(makeRow(r)); });
+        refreshKeyboardUI();
+      }
+      buildKeyboardUI();
 
-  // ====== Loop ======
-  var running=false, last=0;
-  function loop(ts){
-    if(running){ if(STEP_MS===0 || ts-last>=STEP_MS){ step(); last=ts } draw(); requestAnimationFrame(loop) }
-    else { draw() }
-  }
-  draw();
-  function play(){ if(!running){ running=true; setStatus('RUNNING'); requestAnimationFrame(loop) } }
-  function pause(){ running=false; setStatus('PAUSED') }
+      function computeBaseLabels() {
+        baseLabels.clear();
+        var arr = ['r', 't', 'y', 'h', 'n', 'b', 'v', 'f'];
+        for (var i = 0; i < arr.length; i++) { var lbl = arr[i]; if (labelToOffset[lbl]) baseLabels.add(lbl); }
+      }
+      computeBaseLabels();
+      ; (function () { var arr = ['r', 't', 'y', 'h', 'n', 'b', 'v', 'f']; for (var i = 0; i < arr.length; i++) { var l = arr[i]; if (labelToOffset[l]) activeKeys.add(l); } })();
+      refreshKeyboardUI();
 
-  // ====== Input ======
-  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)) }
-  function adjustRange(which,bound,delta){
-    if(which==='B'){
-      if(bound==='min'){ Bmin=clamp(Bmin+delta,0,32); if(Bmin>Bmax) Bmax=Bmin }
-      else { Bmax=clamp(Bmax+delta,0,32); if(Bmax<Bmin) Bmin=Bmax }
-    } else {
-      if(bound==='min'){ Smin=clamp(Smin+delta,0,32); if(Smin>Smax) Smax=Smin }
-      else { Smax=clamp(Smax+delta,0,32); if(Smax<Smin) Smin=Smax }
-    }
-    updateRuleLabel();
-  }
+      function resetToConway() {
+        activeKeys.clear();
+        var arr = ['r', 't', 'y', 'h', 'n', 'b', 'v', 'f'];
+        for (var i = 0; i < arr.length; i++) { var l = arr[i]; if (labelToOffset[l]) activeKeys.add(l); }
+        Bmin = 3; Bmax = 3; Smin = 2; Smax = 3; ALIGN_MOORE = true;
+        refreshKeyboardUI(); updateRuleLabel(); if (!running) draw();
+      }
 
-  window.addEventListener('keydown', function(e){
-    if((['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Enter','-','='].indexOf(e.key) !== -1)) e.preventDefault();
+      // g 는 토글 불가
+      kbdRoot.addEventListener('click', function (e) {
+        var keyEl = e.target.closest('.key');
+        if (!keyEl) return;
+        var lbl = keyEl.dataset.label;
+        if (lbl === CENTER_LABEL) return;
+        toggleLabel(lbl);
+      });
 
-    if(e.key===' '){ running?pause():play(); return }
-    if(e.key==='Enter'){ randomizeGrid(RESEED_PROB); draw(); return }
+      function toggleLabel(lbl) {
+        if (lbl === CENTER_LABEL) return;
+        if (!labelToOffset[lbl]) return;
+        if (activeKeys.has(lbl)) activeKeys.delete(lbl); else activeKeys.add(lbl);
+        refreshKeyboardUI(); updateRuleLabel(); if (!running) draw();
+      }
 
-    // Shift+R: reset to Conway
-    if((e.key==='R' || e.key==='r') && e.shiftKey){ resetToConway(); return }
+      // ===== Grid =====
+      var grid = new Uint8Array(0);
+      var gridNext = new Uint8Array(0);
+      function idx(x, y) { return y * GRID_W + x }
+      function wrapX(x) { if (x < 0) return x + GRID_W; if (x >= GRID_W) return x - GRID_W; return x }
+      function wrapY(y) { if (y < 0) return y + GRID_H; if (y >= GRID_H) return y - GRID_H; return y }
+      function clearGrid() { grid.fill(0); gridNext.fill(0) }
+      function randomizeGrid(prob) {
+        if (typeof prob !== 'number') prob = INIT_PROB;
+        var live = 0; for (var i = 0; i < grid.length; i++) { var v = (Math.random() < prob) ? 1 : 0; grid[i] = v; live += v }
+        setStatus((running ? 'RUNNING' : 'PAUSED') + ' | grid:' + GRID_W + 'x' + GRID_H + ' | live:' + live);
+        return live;
+      }
 
-    // Speed
-    if(e.key==='-'){ STEP_MS = Math.min(1000, STEP_MS+40); setStatus(running?'RUNNING':'PAUSED'); return }
-    if(e.key==='='){ STEP_MS = Math.max(0, STEP_MS-40);   setStatus(running?'RUNNING':'PAUSED'); return }
+      // ===== 이웃 빌드 =====
+      function buildOffsets() {
+        var seen = {};
+        var uniq = [];
+        activeKeys.forEach(function (lbl) {
+          var off = (ALIGN_MOORE && mooreMap[lbl]) ? mooreMap[lbl] : labelToOffset[lbl];
+          if (!off) return;
+          var ox = off.dx, oy = off.dy;
+          if (ox === 0 && oy === 0) return;
+          var k = ox + ',' + oy;
+          if (!seen[k]) { seen[k] = 1; uniq.push([ox, oy]); }
+        });
+        return uniq;
+      }
 
-    // Physical-key toggle
-    var lbl = codeToLabel[e.code];
-    if(lbl){ if(lbl===CENTER_LABEL) return; toggleLabel(lbl); return }
-  }, {passive:false});
+      // ===== 상태 표시 =====
+      var ruleEl = document.getElementById('rule');
+      var statusEl = document.getElementById('status');
+      function updateRuleLabel() {
+        var offs = buildOffsets();
+        var total = offs.length;
+        var baseCount = 0; baseLabels.forEach(function (lbl) { if (activeKeys.has(lbl)) baseCount++ });
+        var extra = Math.max(0, total - baseCount);
+        if (ruleEl) ruleEl.textContent = 'Rule  B[' + Bmin + '-' + Bmax + '] / S[' + Smin + '-' + Smax + ']   |   Neighbors: base ' + baseCount + ' + keys ' + extra + ' = ' + total + (ALIGN_MOORE ? '  [Aligned]' : '  [Physical]');
+        var bs = document.getElementById('bs');
+        if (bs) bs.textContent = 'B[' + Bmin + '-' + Bmax + ']  S[' + Smin + '-' + Smax + ']  (max ' + total + ')';
+        syncBoxes();
+      }
+      function setStatus(t) { if (statusEl) statusEl.textContent = t + ' | step:' + STEP_MS + 'ms | async:' + Math.round(ASYNC_RATE * 100) + '%' }
+      updateRuleLabel(); setStatus('PAUSED');
 
-  // ====== Range boxes (number inputs) ======
-  function $(id){ return document.getElementById(id) }
-  function clamp01(v){ v|=0; if(v<0) v=0; if(v>8) v=8; return v }
-  function fixBounds(){ if(Bmin>Bmax) Bmax=Bmin; if(Smin>Smax) Smax=Smin }
-  function syncBoxes(){ var bm=$('bmin'),bx=$('bmax'),sm=$('smin'),sx=$('smax'); if(bm) bm.value=Bmin; if(bx) bx.value=Bmax; if(sm) sm.value=Smin; if(sx) sx.value=Smax }
-  function bindBoxes(){
-    var bm=$('bmin'), bx=$('bmax'), sm=$('smin'), sx=$('smax');
-    function on(e){
-      var t=e.target; var id=t.id; var v=clamp01(parseInt(t.value,10)||0);
-      if(id==='bmin') Bmin=v; else if(id==='bmax') Bmax=v; else if(id==='smin') Smin=v; else if(id==='smax') Smax=v;
-      fixBounds(); syncBoxes(); updateRuleLabel(); if(!running) draw();
-    }
-    ;[bm,bx,sm,sx].forEach(function(inp){ if(inp){ inp.addEventListener('input', on); inp.addEventListener('change', on); } });
-    syncBoxes();
-  }
-  bindBoxes();
+      // ===== Step & Draw =====
+      function step() {
+        var offsets = buildOffsets(); var nlen = offsets.length;
+        for (var y = 0; y < GRID_H; y++) {
+          for (var x = 0; x < GRID_W; x++) {
+            if (Math.random() > ASYNC_RATE) { gridNext[idx(x, y)] = grid[idx(x, y)]; continue }
+            var cnt = 0; for (var i = 0; i < nlen; i++) { var nx = wrapX(x + offsets[i][0]), ny = wrapY(y + offsets[i][1]); cnt += grid[idx(nx, ny)] }
+            var alive = grid[idx(x, y)] === 1;
+            var born = (!alive) && (cnt >= Bmin && cnt <= Bmax) && (Math.random() < PBIRTH);
+            var stay = (alive) && (cnt >= Smin && cnt <= Smax) && (Math.random() < PSURV);
+            gridNext[idx(x, y)] = (born || stay) ? 1 : 0;
+          }
+        }
+        var tmp = grid; grid = gridNext; gridNext = tmp;
+      }
+      function draw() {
+        // 그리드 실제 픽셀 크기 기준 중앙 정렬
+        var drawW = GRID_W * CELL_SIZE;
+        var drawH = GRID_H * CELL_SIZE;
+        var offX = ((cvs.width - drawW) >> 1);
+        var offY = ((cvs.height - drawH) >> 1);
 
-  // ====== Self tests (press 'T') ======
-  var testsEl = document.getElementById('tests');
-  function assert(name, cond){ return {name:name, ok:!!cond} }
-  function runTests(){
-    var wasRunning = running; if(wasRunning) pause();
-    var results = [];
-    results.push(assert('GRID defined', GRID_W>0 && GRID_H>0));
-    results.push(assert('Arrays sized', grid.length === GRID_W*GRID_H));
+        ctx.fillStyle = COLOR_BG; ctx.fillRect(0, 0, cvs.width, cvs.height);
+        ctx.fillStyle = COLOR_CELL;
+        for (var y = 0; y < GRID_H; y++) {
+          for (var x = 0; x < GRID_W; x++) if (grid[idx(x, y)]) ctx.fillRect(offX + x * CELL_SIZE, offY + y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+      }
 
-    var total0 = buildOffsets().length;
-    results.push(assert('Default neighbors == 8 (Conway-equivalent)', total0===8));
+      // ===== 루프 =====
+      var running = false, last = 0;
+      function loop(ts) {
+        if (running) { if (STEP_MS === 0 || ts - last >= STEP_MS) { step(); last = ts } draw(); requestAnimationFrame(loop) }
+        else { draw() }
+      }
+      draw();
+      function play() { if (!running) { running = true; setStatus('RUNNING'); requestAnimationFrame(loop) } }
+      function pause() { running = false; setStatus('PAUSED') }
 
-    if(ALIGN_MOORE){
-      var offs = buildOffsets();
-      var want = BASE_OFFSETS.map(function(p){return p[0]+','+p[1]}).sort().join('|');
-      var got  = offs.map(function(p){return p[0]+','+p[1]}).sort().join('|');
-      results.push(assert('Exact Moore mapping when aligned', want===got));
-    }
+      // ===== 키보드 입력 =====
+      window.addEventListener('keydown', function (e) {
+        var kc = e.key;
+        var block = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', '-', '='];
+        for (var i = 0; i < block.length; i++) { if (kc === block[i]) { e.preventDefault(); break; } }
 
-    results.push(assert('BASE_OFFSETS defined (8)', Array.isArray(BASE_OFFSETS) && BASE_OFFSETS.length===8));
-    results.push(assert('Base labels mapped (8)', (function(){ computeBaseLabels(); return baseLabels.size===8 })()));
-    results.push(assert('Key code mapping r,c', codeToLabel['KeyR']==='r' && codeToLabel['KeyC']==='c'));
+        if (kc === ' ') { running ? pause() : play(); return }
+        if (kc === 'Enter') { randomizeGrid(RESEED_PROB); draw(); return }
 
-    results.push(assert("'g' not toggleable", (function(){ var b=buildOffsets().length; toggleLabel('g'); var a=buildOffsets().length; return b===a && !activeKeys.has('g') })()));
+        // Shift+R: Conway로 리셋 (소문자 r은 토글로 사용)
+        if ((kc === 'R' || kc === 'r') && e.shiftKey) { resetToConway(); return }
 
-    var beforeN = buildOffsets().length; toggleLabel('r'); var afterN = buildOffsets().length; toggleLabel('r');
-    results.push(assert('Toggle changes neighbor count', beforeN !== afterN));
+        // 속도
+        if (kc === '-') { STEP_MS = Math.min(1000, STEP_MS + 40); setStatus(running ? 'RUNNING' : 'PAUSED'); return }
+        if (kc === '=') { STEP_MS = Math.max(0, STEP_MS - 40); setStatus(running ? 'RUNNING' : 'PAUSED'); return }
 
-    results.push(assert('Offsets exclude center (0,0)', (function(){ var o=buildOffsets(); for(var i=0;i<o.length;i++){ if(o[i][0]===0 && o[i][1]===0) return false } return true })()));
+        // 물리 키 토글
+        var lbl = codeToLabel[e.code];
+        if (lbl) { if (lbl === CENTER_LABEL) return; toggleLabel(lbl); return }
+      }, { passive: false });
 
-    var snapshot = grid.slice();
-    var n0 = randomizeGrid(0); results.push(assert('randomizeGrid(0) == 0', n0===0));
-    var n1 = randomizeGrid(1); results.push(assert('randomizeGrid(1) == W*H', n1===GRID_W*GRID_H));
-    grid.set(snapshot);
+      // ===== 범위 박스 =====
+      function $(id) { return document.getElementById(id) }
+      function clampN(v) {
+        v |= 0;
+        var M = Math.max(0, buildOffsets().length);
+        if (v < 0) v = 0; if (v > M) v = M; return v;
+      }
+      function fixBounds() { if (Bmin > Bmax) Bmax = Bmin; if (Smin > Smax) Smax = Smin }
+      function syncBoxes() {
+        var bm = $('bmin'), bx = $('bmax'), sm = $('smin'), sx = $('smax');
+        var M = Math.max(0, buildOffsets().length);
+        var arr = [bm, bx, sm, sx];
+        for (var i = 0; i < arr.length; i++) { var el = arr[i]; if (el) { el.setAttribute('max', String(M)); } }
+        if (bm) bm.value = Math.min(Bmin, M);
+        if (bx) bx.value = Math.min(Bmax, M);
+        if (sm) sm.value = Math.min(Smin, M);
+        if (sx) sx.value = Math.min(Smax, M);
+      }
+      function bindBoxes() {
+        var bm = $('bmin'), bx = $('bmax'), sm = $('smin'), sx = $('smax');
+        function on(e) {
+          var t = e.target; var id = t.id; var v = clampN(parseInt(t.value, 10) || 0);
+          if (id === 'bmin') Bmin = v; else if (id === 'bmax') Bmax = v; else if (id === 'smin') Smin = v; else if (id === 'smax') Smax = v;
+          fixBounds(); syncBoxes(); updateRuleLabel(); if (!running) draw();
+        }
+        var ins = [bm, bx, sm, sx];
+        for (var i = 0; i < ins.length; i++) { var inp = ins[i]; if (inp) { inp.addEventListener('input', on); inp.addEventListener('change', on); } }
+        syncBoxes();
+      }
+      bindBoxes();
 
-    results.push(assert('INIT_PROB > RESEED_PROB', INIT_PROB > RESEED_PROB));
+      // ===== Self tests (T) =====
+      var testsEl = document.getElementById('tests');
+      function assert(name, cond) { return { name: name, ok: !!cond }; }
+      function runTests() {
+        var wasRunning = running; if (wasRunning) pause();
+        var results = [];
+        results.push(assert('GRID defined', GRID_W > 0 && GRID_H > 0));
+        results.push(assert('Arrays sized', grid.length === GRID_W * GRID_H));
 
-    // Keyboard grid & picker
-    results.push(assert('Keyboard has 30 keys', document.querySelectorAll('#kbd .key').length === 30));
-    var oldBmin=Bmin, oldBmax=Bmax, oldSmin=Smin, oldSmax=Smax;
-    // simulate boxes set
-    Bmin=2; Bmax=5; Smin=1; Smax=4; syncBoxes(); updateRuleLabel();
-    var okB = (document.getElementById('bmin').value==='2' && document.getElementById('bmax').value==='5');
-    var okS = (document.getElementById('smin').value==='1' && document.getElementById('smax').value==='4');
-    results.push(assert('Boxes reflect B range', okB));
-    results.push(assert('Boxes reflect S range', okS));
-    // restore
-    Bmin=oldBmin; Bmax=oldBmax; Smin=oldSmin; Smax=oldSmax; syncBoxes(); updateRuleLabel();
+        var total0 = buildOffsets().length;
+        results.push(assert('Default neighbors == 8 (Conway-equivalent)', total0 === 8));
 
-    var summary = results.map(function(r){ return (r.ok?'- OK: ':'- FAIL: ') + r.name }).join('\n');
-    if(testsEl) testsEl.textContent = 'Tests (T):\n'+summary;
-    if(wasRunning) play(); else draw();
-  }
-  window.addEventListener('keydown', function(e){ if(e.key && e.key.toLowerCase()==='t'){ e.preventDefault(); runTests() } });
+        if (ALIGN_MOORE) {
+          var offs = buildOffsets();
+          var wantArr = [];
+          for (var i = 0; i < BASE_OFFSETS.length; i++) { var p = BASE_OFFSETS[i]; wantArr.push(p[0] + ',' + p[1]); }
+          wantArr.sort();
+          var gotArr = [];
+          for (var j = 0; j < offs.length; j++) { var q = offs[j]; gotArr.push(q[0] + ',' + q[1]); }
+          gotArr.sort();
+          results.push(assert('Exact Moore mapping when aligned', wantArr.join('|') === gotArr.join('|')));
+        }
 
-  // ====== Resize & fit canvas ======
-  function resizeCanvas(){
-    var left = document.getElementById('left');
-    var footer = document.getElementById('footer');
-    var gap=12, pad=12;
-    var availW = window.innerWidth - pad*2;
-    var availH = window.innerHeight - pad*2;
-    var footerH = footer ? footer.offsetHeight : 0;
-    var leftH = Math.max(200, availH - footerH - gap);
-    left.style.height = leftH + 'px';
-    left.style.minHeight = leftH + 'px';
+        results.push(assert('BASE_OFFSETS defined (8)', Object.prototype.toString.call(BASE_OFFSETS) === '[object Array]' && BASE_OFFSETS.length === 8));
+        results.push(assert('Base labels mapped (8)', (function () { computeBaseLabels(); return baseLabels.size === 8; })()));
+        results.push(assert('Key code mapping r,c', codeToLabel['KeyR'] === 'r' && codeToLabel['KeyC'] === 'c'));
 
-    var panelPad = 20, panelGap = 10;
-    var titleEl = left.querySelector('.title');
-    var rowEl = left.querySelector('.row');
-    var testsTopEl = left.querySelector('#testsTop');
-    var childrenHeights = 0;
-    function vis(el){ return !!(el && el.offsetParent !== null) }
-    if(vis(titleEl)) childrenHeights += titleEl.offsetHeight||0;
-    if(vis(rowEl)) childrenHeights += rowEl.offsetHeight||0;
-    if(vis(testsTopEl)) childrenHeights += testsTopEl.offsetHeight||0;
-    var visibleCount = 0; ['.title','#ca','.row','#testsTop'].forEach(function(sel){ var el=left.querySelector(sel); if(el && (el.offsetParent !== null || sel==='#ca')) visibleCount++ });
-    var gapsTotal = Math.max(0, (visibleCount-1)) * panelGap;
+        results.push(assert("'g' not toggleable", (function () { var b = buildOffsets().length; toggleLabel('g'); var a = buildOffsets().length; return b === a && !activeKeys.has('g'); })()));
 
-    var canvasH = Math.max(100, leftH - panelPad - childrenHeights - gapsTotal);
-    var canvasW = Math.max(200, availW);
-    cvs.width = canvasW|0; cvs.height = canvasH|0;
-    GRID_W = Math.floor(cvs.width / CELL_SIZE); GRID_H = Math.floor(cvs.height / CELL_SIZE);
-    grid = new Uint8Array(GRID_W * GRID_H); gridNext = new Uint8Array(GRID_W * GRID_H);
-    randomizeGrid(INIT_PROB); draw();
-  }
-  window.addEventListener('resize', resizeCanvas);
-  resizeCanvas();
-})();
-</script>
+        var beforeN = buildOffsets().length; toggleLabel('r'); var afterN = buildOffsets().length; toggleLabel('r');
+        results.push(assert('Toggle changes neighbor count', beforeN !== afterN));
+
+        results.push(assert('Offsets exclude center (0,0)', (function () { var o = buildOffsets(); for (var i = 0; i < o.length; i++) { if (o[i][0] === 0 && o[i][1] === 0) return false; } return true; })()));
+
+        var snapshot = grid.slice();
+        var n0 = randomizeGrid(0); results.push(assert('randomizeGrid(0) == 0', n0 === 0));
+        var n1 = randomizeGrid(1); results.push(assert('randomizeGrid(1) == W*H', n1 === GRID_W * GRID_H));
+        grid.set(snapshot);
+
+        results.push(assert('INIT_PROB > RESEED_PROB', INIT_PROB > RESEED_PROB));
+
+        results.push(assert('Keyboard has 30 keys', document.querySelectorAll('#kbd .key').length === 30));
+        var oldBmin = Bmin, oldBmax = Bmax, oldSmin = Smin, oldSmax = Smax;
+        Bmin = 2; Bmax = 5; Smin = 1; Smax = 4; syncBoxes(); updateRuleLabel();
+        var okB = (document.getElementById('bmin').value === '2' && document.getElementById('bmax').value === '5');
+        var okS = (document.getElementById('smin').value === '1' && document.getElementById('smax').value === '4');
+        results.push(assert('Boxes reflect B range', okB));
+        results.push(assert('Boxes reflect S range', okS));
+        Bmin = oldBmin; Bmax = oldBmax; Smin = oldSmin; Smax = oldSmax; syncBoxes(); updateRuleLabel();
+
+        var summary = [];
+        for (var k = 0; k < results.length; k++) {
+          var r = results[k]; summary.push((r.ok ? '- OK: ' : '- FAIL: ') + r.name);
+        }
+        if (testsEl) testsEl.textContent = 'Tests (T):\n' + summary.join('\n');
+        if (wasRunning) play(); else draw();
+      }
+      window.addEventListener('keydown', function (e) { var kk = e.key; if (kk && kk.toLowerCase() === 't') { e.preventDefault(); runTests(); } });
+
+      // ===== 리사이즈 & 캔버스 맞춤 =====
+      function resizeCanvas() {
+        var left = document.getElementById('left');
+        var footer = document.getElementById('footer');
+        var gap = 12, pad = 12;
+        var availW = window.innerWidth - pad * 2;
+        var availH = window.innerHeight - pad * 2;
+        var footerH = footer ? footer.offsetHeight : 0;
+        var leftH = Math.max(200, availH - footerH - gap);
+        left.style.height = leftH + 'px';
+        left.style.minHeight = leftH + 'px';
+
+        var panelPad = 20, panelGap = 10;
+        var titleEl = left.querySelector('.title');
+        var rowEl = left.querySelector('.row');
+        var testsTopEl = left.querySelector('#testsTop');
+        var childrenHeights = 0;
+        function vis(el) { return !!(el && el.offsetParent !== null) }
+        if (vis(titleEl)) childrenHeights += titleEl.offsetHeight || 0;
+        if (vis(rowEl)) childrenHeights += rowEl.offsetHeight || 0;
+        if (vis(testsTopEl)) childrenHeights += testsTopEl.offsetHeight || 0;
+        var visibleCount = 0; var sels = ['.title', '#ca', '.row', '#testsTop'];
+        for (var i = 0; i < sels.length; i++) { var sel = sels[i]; var el = left.querySelector(sel); if (el && (el.offsetParent !== null || sel === '#ca')) visibleCount++; }
+        var gapsTotal = Math.max(0, (visibleCount - 1)) * panelGap;
+
+        var canvasH = Math.max(100, leftH - panelPad - childrenHeights - gapsTotal);
+        var canvasW = Math.max(200, availW);
+        // snap to CELL_SIZE multiples to avoid subpixel bias and ensure perfect visual centering
+        canvasW = Math.floor(canvasW / CELL_SIZE) * CELL_SIZE;
+        canvasH = Math.floor(canvasH / CELL_SIZE) * CELL_SIZE;
+        cvs.width = canvasW | 0; cvs.height = canvasH | 0;
+        GRID_W = Math.floor(cvs.width / CELL_SIZE); GRID_H = Math.floor(cvs.height / CELL_SIZE);
+        grid = new Uint8Array(GRID_W * GRID_H); gridNext = new Uint8Array(GRID_W * GRID_H);
+        randomizeGrid(INIT_PROB); draw();
+      }
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+    })();
+  </script>
 </body>
+
 </html>
