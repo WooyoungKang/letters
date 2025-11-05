@@ -1,544 +1,606 @@
-<script>
-  // ===== Tunables =====
-  const REST_PERIOD = 4.0, FAST_PERIOD = 0.6;
-  const MIN_IKI = 120, MAX_IKI = 2200, EMA_A = 0.22;
-  const IDLE_TAU = 10.0;
-  const PERIOD_TAU = 2.5;
-  const HEART_RATIO = 0.45;
-  const EXPLODE_BPM = 180;
-  const EXPLODE_COOLDOWN_S = 2.0;
-  const REFORM_DELAY_S = 0.5;
-  const REFORM_DURATION_S = 4.5;
-  const COOL_EXTRA_TAU_S = 3.0;
-  const EXPLODE_PARTICLES = 420;
-  const REFORM_PARTICLES = 220;
-  const GRAVITY = 900;
+<!DOCTYPE html>
+<html lang="ko">
 
-  // ===== DOM =====
-  const vis = document.getElementById('vis');
-  const cvs = document.getElementById('mesh');
-  const ctx = cvs.getContext('2d', { alpha: false });
-  const hud = document.getElementById('hud');
-  const sndBtn = document.getElementById('snd');
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QWERTY-Kernel Cellular Automata — DOS Theme</title>
+  <style>
+    :root {
+      --bg: #000;
+      --fg: #e6e6e6;
+      --dim: #777;
+      --accent: #e6e6e6
+    }
 
-  // ===== State =====
-  let lastKeyTime = 0, emaIKI = 900;
-  let currentPeriod = REST_PERIOD;
-  let phaseBreath = 0, phaseHeart = 0;
-  let hbEnv = 0;
-  let paused = false;
+    * {
+      box-sizing: border-box
+    }
 
-  const TAU = Math.PI * 2;
-  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  const lmap = (v, a, b, c, d) => c + (d - c) * ((v - a) / (b - a));
-  const smoothstep = (x) => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
+    html,
+    body {
+      height: 100%;
+      overflow: hidden
+    }
 
-  let CW = 0, CH = 0, LAT = 60, LON = 100;
-  const base = [];
-  const buf = document.createElement('canvas');
-  const btx = buf.getContext('2d', { alpha: true });
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 13px "Perfect DOS VGA 437 Win", "IBM VGA 8x16", "PxPlus_IBM_VGA8", "Px437 IBM VGA8", "Fixedsys", "Terminal", "Courier New", Courier, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
 
-  // Typed glyph burst
-  let pendingChar = null;
-  let bgGlyphs = []; // [{ch,x,y,vx,vy,size,alpha,life,rot}]
+    .app {
+      height: 100dvh;
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr auto;
+      gap: 12px;
+      padding: 12px
+    }
 
-  // Debris & reformers
-  let debris = [];
-  let reformers = [];
-  let pendingTargets = [];
-  let lastExplodeT = -Infinity;
-  let shattered = false;
-  let shatterTime = 0; let reformStartS = 0;
-  let heartAlpha = 1.0;
+    .panel {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #000
+    }
 
-  let cooling = false;
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      background: #000
+    }
 
-  const easeStep = (t, a = 0.35, b = 0.90) => {
-    const x = Math.min(1, Math.max(0, (t - a) / (b - a)));
-    return x * x * (3 - 2 * x);
-  };
-  function hash01(i) { const s = Math.sin(i * 12.9898) * 43758.5453; return s - Math.floor(s); }
+    .mono {
+      font-family: inherit
+    }
 
-  const CALM = ["·", ".", "`", "˚", ",", "o", "0", "0", "0"];
-  const MID = ["-", "~", "=", "+", "*"];
-  const EXCIT = ["*", "!", "!", "^", "#", "%", "@"];
+    .kbd {
+      display: grid;
+      grid-template-rows: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 6px
+    }
 
-  function pickHeartChar(intensity, excite, h) {
-    if (excite < 0.33) {
-      const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
-      return (intensity > 0.85 && h > 0.9) ? MID[Math.floor(h * MID.length)] : CALM[idxC];
-    } else if (excite < 0.66) {
-      const wC = 1 - (excite - 0.33) / 0.33;
-      const wM = 0.5; const pick = h;
-      if (pick < wC * 0.6) {
-        const idxC = Math.min(CALM.length - 1, Math.floor(intensity * (CALM.length - 1)));
-        return CALM[idxC];
-      } else if (pick < wC * 0.6 + wM * 0.25 + intensity * 0.25) {
-        return MID[Math.min(MID.length - 1, Math.floor(intensity * MID.length))];
-      } else {
-        return EXCIT[Math.min(EXCIT.length - 1, Math.floor(intensity * (EXCIT.length - 1)))];
+    .kbd-row {
+      display: grid;
+      grid-auto-flow: column;
+      gap: 6px;
+      justify-content: center
+    }
+
+    .key {
+      min-width: 16px;
+      padding: 2px 3px;
+      font-size: 11px;
+      text-align: center;
+      color: var(--fg);
+      cursor: pointer
+    }
+
+    .on {
+      background: var(--accent);
+      color: #000
+    }
+
+    .off {
+      background: #000;
+      color: var(--dim)
+    }
+
+    .small {
+      font-size: 11px;
+      opacity: 1;
+      letter-spacing: 0;
+      text-transform: uppercase
+    }
+
+    .tests {
+      color: var(--fg);
+      font-size: 11px;
+      opacity: 1;
+      line-height: 1.35;
+      white-space: pre
+    }
+
+    /* 상단 패널(제목/상태) 숨겨 CA 공간 극대화 */
+    #left .title,
+    #left .row,
+    #left #testsTop {
+      display: none !important
+    }
+
+    /* 푸터 좌우 분할: 왼쪽(설명·B/S·픽커), 오른쪽(키보드) */
+    #footer {
+      justify-self: stretch;
+      align-self: end;
+      max-height: 30vh;
+      overflow: auto;
+      opacity: .95;
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      gap: 12px
+    }
+
+    #footer-left {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    #footer-right {
+      width: 260px;
+      flex: 0 0 260px
+    }
+
+    /* Range picker (mouse only, no sliders) */
+    .picker {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 6px 8px;
+      align-items: center
+    }
+
+    .picker .label {
+      text-transform: uppercase;
+      font-size: 12px
+    }
+
+    .line {
+      display: grid;
+      grid-auto-flow: column;
+      gap: 4px
+    }
+
+    .cell {
+      width: 18px;
+      height: 18px;
+      display: inline-grid;
+      place-items: center;
+      font-size: 11px;
+      color: var(--dim);
+      background: #000;
+      cursor: pointer
+    }
+
+    .cell.active {
+      background: var(--fg);
+      color: #000
+    }
+
+    .cell:hover {
+      outline: 1px dashed var(--fg)
+    }
+
+    /* Range boxes (no sliders) */
+    .ibox {
+      display: grid;
+      grid-auto-rows: auto;
+      gap: 2px 2px;
+      align-items: center
+    }
+
+    .ibox .label {
+      text-transform: uppercase;
+      font-size: 11px;
+      margin-right: 0
+    }
+
+    .ibox input {
+      width: 30px;
+      padding: 1px 2px;
+      font: inherit;
+      background: #000;
+      color: var(--fg);
+      border: 1px solid #555;
+      outline: none
+    }
+
+    .ibox input:focus {
+      border-color: #aaa
+    }
+
+    .ibox .sep {
+      opacity: .7;
+      margin: 0 1px
+    }
+
+    .ibox-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="panel" id="left">
+      <div class="title">Cellular Automata (QWERTY Kernel)</div>
+      <canvas id="ca"></canvas>
+      <div class="row mono">
+        <div id="rule" class="stat"></div>
+        <div id="status" class="stat"></div>
+      </div>
+      <div id="testsTop" class="tests mono"></div>
+    </div>
+
+    <div class="panel" id="footer">
+      <div id="footer-left" class="mono">
+        <div class="small" style="text-transform:uppercase;">active keys=white | center=g | space: play/pause | enter:
+          reseed | shift+r: conway | -/= speed | use mouse to set birth/survival (click/drag on 0..8)</div>
+        <div id="bs" class="mono">B[3-3] S[2-3]</div>
+        <div id="ibox" class="ibox mono">
+          <div class="ibox-row">
+            <div class="label">Birth</div>
+            <input id="bmin" type="number" min="0" max="8" step="1" value="3" />
+            <div class="sep">~</div>
+            <input id="bmax" type="number" min="0" max="8" step="1" value="3" />
+          </div>
+          <div class="ibox-row">
+            <div class="label">Surv</div>
+            <input id="smin" type="number" min="0" max="8" step="1" value="2" />
+            <div class="sep">~</div>
+            <input id="smax" type="number" min="0" max="8" step="1" value="3" />
+          </div>
+        </div>
+        <div id="tests" class="tests mono"></div>
+      </div>
+      <div id="footer-right">
+        <div id="kbd" class="kbd mono"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      // ====== Canvas & Grid sizing ======
+      var cvs = document.getElementById('ca');
+      var ctx = cvs.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Higher resolution (smaller cell -> more cells)
+      var CELL_SIZE = 2; // finer resolution for more organic feel
+      var GRID_W = 0, GRID_H = 0;
+      var STEP_MS = 120; // slower default
+
+      // Exact Moore alignment around 'g'
+      var ALIGN_MOORE = true;
+
+      // Organic tweaks
+      var ASYNC_RATE = 0.7; // fraction of cells updated per step
+      var PBIRTH = 0.90;    // birth probability when condition satisfied
+      var PSURV = 0.98;    // survival probability when condition satisfied
+
+      // Seed densities
+      var INIT_PROB = 0.18;   // on load
+      var RESEED_PROB = 0.08; // Enter reseed (sparser)
+
+      // Conway B3/S23
+      var Bmin = 3, Bmax = 3, Smin = 2, Smax = 3;
+
+      // ====== QWERTY mapping as 3x10 uniform grid (center=g) ======
+      var rowQ = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'];
+      var rowA = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'];
+      var rowZ = ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/'];
+
+      var codesQ = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY', 'KeyU', 'KeyI', 'KeyO', 'KeyP'];
+      var codesA = ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'];
+      var codesZ = ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period', 'Slash'];
+
+      // columns relative to 'g' at 0 (uniform 3x10 grid, not physical spacing)
+      var dx = [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5];
+      var dxQ = dx.slice(), dxA = dx.slice(), dxZ = dx.slice();
+
+      var CENTER_LABEL = 'g';
+
+      var labelToOffset = {}, codeToLabel = {};
+      rowQ.forEach(function (label, i) { labelToOffset[label] = { dx: dxQ[i], dy: -1 }; codeToLabel[codesQ[i]] = label; });
+      rowA.forEach(function (label, i) { labelToOffset[label] = { dx: dxA[i], dy: 0 }; codeToLabel[codesA[i]] = label; });
+      rowZ.forEach(function (label, i) { labelToOffset[label] = { dx: dxZ[i], dy: +1 }; codeToLabel[codesZ[i]] = label; });
+
+      // Exact Moore for 8 around 'g'
+      var mooreMap = {
+        r: { dx: -1, dy: -1 }, t: { dx: 0, dy: -1 }, y: { dx: 1, dy: -1 },
+        f: { dx: -1, dy: 0 }, h: { dx: 1, dy: 0 },
+        v: { dx: -1, dy: 1 }, b: { dx: 0, dy: 1 }, n: { dx: 1, dy: 1 }
+      };
+
+      // For tests
+      var BASE_OFFSETS = [
+        [-1, -1], [0, -1], [1, -1],
+        [-1, 0], [1, 0],
+        [-1, 1], [0, 1], [1, 1]
+      ];
+
+      // Active labels / base labels
+      var activeKeys = new Set();
+      var baseLabels = new Set();
+
+      // ====== UI: Keyboard grid ======
+      var kbdRoot = document.getElementById('kbd');
+      function makeRow(labels) {
+        var row = document.createElement('div');
+        row.className = 'kbd-row';
+        labels.forEach(function (lbl) {
+          var el = document.createElement('div');
+          el.className = 'key off';
+          el.dataset.label = lbl;
+          el.textContent = lbl;
+          row.appendChild(el);
+        });
+        return row;
       }
-    } else {
-      const idxE = Math.min(EXCIT.length - 1, Math.floor(intensity * (EXCIT.length - 1)));
-      return (intensity < 0.35 && h < 0.15) ? MID[Math.floor(h * MID.length)] : EXCIT[idxE];
-    }
-  }
-
-  // ===== Grid =====
-  function buildGrid() {
-    base.length = 0; let idx = 0;
-    for (let i = 0; i <= LAT; i++) {
-      const th = i / LAT * Math.PI;
-      for (let j = 0; j <= LON; j++) {
-        const ph = j / LON * TAU;
-        base.push({ th, ph, idx: idx++ });
+      function refreshKeyboardUI() {
+        Array.prototype.forEach.call(kbdRoot.querySelectorAll('.key'), function (el) {
+          var lbl = el.dataset.label;
+          var on = activeKeys.has(lbl);
+          el.classList.toggle('on', on);
+          el.classList.toggle('off', !on);
+        });
       }
-    }
-  }
-
-  // ===== Fit =====
-  let FONT_BASE = 16;
-  function fit() {
-    const r = window.devicePixelRatio || 1;
-    CW = vis.clientWidth | 0; CH = vis.clientHeight | 0;
-    cvs.width = CW * r; cvs.height = CH * r; ctx.setTransform(r, 0, 0, r, 0, 0);
-    ctx.imageSmoothingEnabled = true;
-    buf.width = CW; buf.height = CH;
-    const target = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1200 : 2000;
-    const lon = Math.max(56, Math.min(110, Math.round(Math.sqrt(target * 2))));
-    const lat = Math.round(lon * 0.6);
-    LON = lon; LAT = lat; buildGrid();
-    FONT_BASE = Math.round(Math.min(CW, CH) * 0.020);
-    FONT_BASE = Math.max(10, Math.min(22, FONT_BASE));
-    btx.textBaseline = 'middle';
-  }
-  addEventListener('resize', fit);
-  document.addEventListener('visibilitychange', async () => {
-    paused = document.hidden;
-    // 탭 복귀 시 오디오 컨텍스트도 복구
-    if (!paused) await ensureAudioStarted();
-  });
-
-  // ===== Fonts =====
-  const setFontBucket = (bucket) => {
-    const size = Math.round(FONT_BASE * (0.85 + 0.22 * bucket));
-    btx.font = `${size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-  };
-  function setBucketFontFromF(f) {
-    const bucket = (f < 1.05) ? 0 : (f < 1.25) ? 1 : 2;
-    setFontBucket(bucket);
-  }
-
-  // ===== Heart signal =====
-  function cardiacSeries(t) {
-    const y = 0.44
-      + 0.36 * Math.cos(t - 0.05)
-      + 0.22 * Math.cos(2 * t - 1.2)
-      + 0.11 * Math.cos(3 * t - 0.4)
-      + 0.06 * Math.cos(4 * t - 0.9);
-    return Math.pow(Math.max(0, y), 1.20);
-  }
-
-  // ===== Audio =====
-  class AudioBus {
-    constructor() { this.ctx = null; this.master = null; this.baseGain = 0.55; }
-    async init() {
-      if (this.ctx) return;
-      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = this.baseGain;
-      this.master.connect(this.ctx.destination);
-    }
-    async resume() {
-      await this.init();
-      if (this.ctx.state !== 'running') {
-        try { await this.ctx.resume(); } catch (e) { /* ignore */ }
+      function buildKeyboardUI() {
+        kbdRoot.innerHTML = '';
+        [rowQ, rowA, rowZ].forEach(function (r) { kbdRoot.appendChild(makeRow(r)); });
+        refreshKeyboardUI();
       }
-    }
-  }
-  const audioBus = new AudioBus();
+      buildKeyboardUI();
 
-  class HeartbeatAudio {
-    constructor(bus) { this.bus = bus; this.on = false; this.nextTime = 0; this.period = 0.9; this.lookAhead = 0.10; this.horizon = 0.35; this.timer = null; }
-    async start() {
-      await this.bus.resume();
-      if (this.on) return;
-      this.on = true;
-      const now = this.bus.ctx.currentTime + 0.05;
-      this.nextTime = now;
-      this._thump(now, 1.0);
-      this._thump(now + 0.30 * this.period, 0.55);
-      this.timer = setInterval(() => this._tick(), this.lookAhead * 1000);
-    }
-    stop() { if (!this.on) return; this.on = false; clearInterval(this.timer); this.timer = null; }
-    setPeriod(p) { this.period = Math.max(0.03, p); }
-    _tick() {
-      const ct = this.bus.ctx.currentTime;
-      while (this.nextTime < ct + this.horizon) {
-        const t1 = this.nextTime, t2 = t1 + 0.30 * this.period;
-        this._thump(t1, 1.0); this._thump(t2, 0.55);
-        this.nextTime += this.period;
+      // ====== Base labels (Conway 8) ======
+      function computeBaseLabels() {
+        baseLabels.clear();
+        ['r', 't', 'y', 'h', 'n', 'b', 'v', 'f'].forEach(function (lbl) { if (labelToOffset[lbl]) baseLabels.add(lbl); });
       }
-    }
-    _thump(time, amp = 1) {
-      if (!this.bus.ctx || !this.bus.master) return;
+      computeBaseLabels();
+      ['r', 't', 'y', 'h', 'n', 'b', 'v', 'f'].forEach(function (lbl) { if (labelToOffset[lbl]) activeKeys.add(lbl); });
+      refreshKeyboardUI();
 
-      const ctx = this.bus.ctx;
-      // Sub
-      const sub = ctx.createOscillator(); sub.type = 'sine';
-      const subG = ctx.createGain(); subG.gain.setValueAtTime(0, time);
-      subG.gain.linearRampToValueAtTime(0.55 * amp, time + 0.005);
-      subG.gain.exponentialRampToValueAtTime(0.001, time + 0.24);
-      sub.frequency.setValueAtTime(36, time);
-      sub.frequency.exponentialRampToValueAtTime(30, time + 0.22);
-
-      // Mid
-      const osc = ctx.createOscillator(); osc.type = 'sine';
-      const oG = ctx.createGain(); oG.gain.setValueAtTime(0, time);
-      oG.gain.linearRampToValueAtTime(0.95 * amp, time + 0.006);
-      oG.gain.exponentialRampToValueAtTime(0.001, time + 0.20);
-      osc.frequency.setValueAtTime(90, time);
-      osc.frequency.exponentialRampToValueAtTime(55, time + 0.18);
-
-      // Click/noise
-      const nDur = 0.05;
-      const nBuf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * nDur)), ctx.sampleRate);
-      const d = nBuf.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / d.length * 6);
-      const noise = ctx.createBufferSource(); noise.buffer = nBuf;
-      const nG = ctx.createGain(); nG.gain.setValueAtTime(0.15 * amp, time);
-      nG.gain.exponentialRampToValueAtTime(0.002, time + 0.05);
-
-      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
-      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 28;
-
-      sub.connect(subG).connect(lp);
-      osc.connect(oG).connect(lp);
-      noise.connect(nG).connect(lp);
-      lp.connect(hp).connect(this.bus.master);
-
-      sub.start(time); sub.stop(time + 0.28);
-      osc.start(time); osc.stop(time + 0.24);
-      noise.start(time); noise.stop(time + nDur);
-    }
-  }
-  const heartAudio = new HeartbeatAudio(audioBus);
-
-  // --- FIX: 확실한 오디오 언락 루틴 ---
-  async function unlockWithSilentClick() {
-    // iOS/사파리 호환을 위해 아주 짧은 무음 버퍼를 재생
-    await audioBus.resume();
-    const ctx = audioBus.ctx;
-    const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
-    const src = ctx.createBufferSource(); src.buffer = buf;
-    src.connect(ctx.destination); // 직접 destination으로 연결해 확실히 언락
-    try { src.start(0); } catch (e) { }
-    try { src.stop(0); } catch (e) { }
-  }
-
-  async function ensureAudioStarted() {
-    await unlockWithSilentClick();
-    await heartAudio.start();
-    sndBtn.textContent = 'SOUND: ON';
-  }
-
-  // 버튼/화면/키다운—모두 같은 스타터 사용
-  sndBtn.addEventListener('click', ensureAudioStarted);
-  window.addEventListener('pointerdown', ensureAudioStarted, { once: true });
-  window.addEventListener('touchstart', ensureAudioStarted, { once: true, passive: true });
-  window.addEventListener('keydown', ensureAudioStarted, { once: true });
-
-  // ===== Input (tempo + glyph) =====
-  document.addEventListener('keydown', (e) => {
-    if (cooling) return; // cooling 중엔 입력 무시
-    const now = performance.now();
-    if (lastKeyTime > 0) { const diff = now - lastKeyTime; emaIKI = (1 - EMA_A) * emaIKI + EMA_A * diff; }
-    lastKeyTime = now;
-    if (e.key && e.key.length === 1 && /\S/.test(e.key)) pendingChar = e.key;
-  });
-
-  // ===== Background glyphs outside heart (burst) =====
-  function spawnBgGlyphOutsideHeart(ch, R, cx, cy, count = 5) {
-    for (let n = 0; n < count; n++) {
-      let x = 0, y = 0;
-      for (let i = 0; i < 16; i++) {
-        x = Math.random() * CW; y = Math.random() * CH;
-        const dx = x - cx, dy = y - cy; if (dx * dx + dy * dy > R * R * 1.10) break;
+      function resetToConway() {
+        activeKeys.clear();
+        ['r', 't', 'y', 'h', 'n', 'b', 'v', 'f'].forEach(function (lbl) { if (labelToOffset[lbl]) activeKeys.add(lbl); });
+        Bmin = 3; Bmax = 3; Smin = 2; Smax = 3; ALIGN_MOORE = true;
+        refreshKeyboardUI(); updateRuleLabel(); if (!running) draw();
       }
-      const size = 10 + Math.random() * 40;
-      const life = 0.7 + Math.random() * 1.0;
-      const rot = (Math.random() - 0.5) * 0.6;
-      const vx = (Math.random() - 0.5) * 26;
-      const vy = (Math.random() - 0.5) * 26;
-      bgGlyphs.push({ ch, x, y, vx, vy, size, alpha: 1.0, life, rot });
-    }
-  }
 
-  // ===== Debris & Reformers =====
-  function explode(cx, cy, ptsSnapshot) {
-    const now = performance.now() / 1000;
-    if (now - lastExplodeT < EXPLODE_COOLDOWN_S) return;
-    lastExplodeT = now; shattered = true; shatterTime = now; reformStartS = 0; heartAlpha = 0; cooling = true;
-
-    // 폭발 시 하트비트 신속 음소거
-    try {
-      if (audioBus.ctx && audioBus.master) {
-        const t = audioBus.ctx.currentTime;
-        const g = audioBus.master.gain;
-        g.cancelScheduledValues(t);
-        g.setValueAtTime(g.value, t);
-        g.linearRampToValueAtTime(0.0, t + 0.18);
-      }
-    } catch (e) { }
-
-    for (let i = 0; i < EXPLODE_PARTICLES; i++) {
-      const ang = Math.random() * TAU; const spd = 240 + Math.random() * 1000; const size = 12 + Math.random() * 18;
-      const chSets = ["·", ".", "`", "˚", ",", "o", "0", "-", "~", "=", "+", "*", "*", "!", "^", "#", "%", "@"]; const ch = chSets[Math.floor(Math.random() * chSets.length)];
-      debris.push({
-        x: cx, y: cy,
-        vx: Math.cos(ang) * spd,
-        vy: Math.sin(ang) * spd,
-        ch, size,
-        color: `hsl(130 80% ${45 + Math.random() * 12}%)`,
-        life: 2.6 + Math.random() * 1.0
+      // click toggle (g blocked)
+      kbdRoot.addEventListener('click', function (e) {
+        var keyEl = e.target.closest('.key');
+        if (!keyEl) return;
+        var lbl = keyEl.dataset.label;
+        if (lbl === CENTER_LABEL) return; // g 고정
+        toggleLabel(lbl);
       });
-    }
 
-    // targets to reform (deferred)
-    pendingTargets.length = 0;
-    for (let i = 0; i < ptsSnapshot.length; i += Math.max(1, Math.floor(ptsSnapshot.length / REFORM_PARTICLES)))
-      pendingTargets.push(ptsSnapshot[i]);
-    reformers.length = 0;
-  }
-
-  function updateAndDrawDebris(dt) {
-    if (!debris.length) return;
-    btx.save();
-    for (let i = debris.length - 1; i >= 0; i--) {
-      const d = debris[i];
-      d.vy += GRAVITY * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.life -= dt;
-      const a = clamp(d.life / 2.0, 0, 1);
-      if (a <= 0 || d.y > CH + 120) { debris.splice(i, 1); continue; }
-      btx.globalAlpha = a * 0.9;
-      btx.font = `${d.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-      btx.fillStyle = d.color; btx.fillText(d.ch, d.x, d.y);
-    }
-    btx.restore();
-  }
-
-  function updateAndDrawReformers(dt, nowS) {
-    if (!reformers.length) return;
-    const tSince = nowS - (reformStartS || shatterTime);
-    let reformProgress = clamp((tSince - REFORM_DELAY_S) / REFORM_DURATION_S, 0, 1);
-    heartAlpha = smoothstep(reformProgress);
-
-    // 복구 중엔 마스터 게인도 서서히 복귀
-    try {
-      if (audioBus.ctx && audioBus.master && heartAudio.on) {
-        const t = audioBus.ctx.currentTime;
-        const target = audioBus.baseGain * heartAlpha * 0.9;
-        const g = audioBus.master.gain;
-        g.cancelScheduledValues(t);
-        g.setTargetAtTime(target, t, 0.08);
+      function toggleLabel(lbl) {
+        if (lbl === CENTER_LABEL) return;
+        if (!labelToOffset[lbl]) return;
+        if (activeKeys.has(lbl)) activeKeys.delete(lbl); else activeKeys.add(lbl);
+        refreshKeyboardUI(); updateRuleLabel(); if (!running) draw();
       }
-    } catch (e) { }
 
-    btx.save();
-    for (let i = reformers.length - 1; i >= 0; i--) {
-      const r = reformers[i];
-      const k = 2.0;
-      r.vx += (r.tx - r.x) * k * dt; r.vy += (r.ty - r.y) * k * dt;
-      const vMag = Math.hypot(r.vx, r.vy); const vMax = 520; if (vMag > vMax) { r.vx *= vMax / vMag; r.vy *= vMax / vMag; }
-      r.x += r.vx * dt; r.y += r.vy * dt; r.life -= dt;
-      const toTarget = Math.hypot(r.tx - r.x, r.ty - r.y);
-      const a = clamp(1 - toTarget / 200, 0.05, 1.0) * 0.9; btx.globalAlpha = a * 0.85;
-      btx.font = `${r.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-      btx.fillStyle = `hsl(130 70% ${42 + 20 * (1 - a)}%)`;
-      btx.fillText(r.ch, r.x, r.y);
-      if (toTarget < 6 || r.life <= 0) reformers.splice(i, 1);
-    }
-    btx.restore();
+      // ====== Grid ======
+      var grid = new Uint8Array(0);
+      var gridNext = new Uint8Array(0);
+      function idx(x, y) { return y * GRID_W + x }
+      function wrapX(x) { if (x < 0) return x + GRID_W; if (x >= GRID_W) return x - GRID_W; return x }
+      function wrapY(y) { if (y < 0) return y + GRID_H; if (y >= GRID_H) return y - GRID_H; return y }
+      function clearGrid() { grid.fill(0); gridNext.fill(0) }
+      function randomizeGrid(prob) {
+        if (typeof prob !== 'number') prob = INIT_PROB;
+        var live = 0; for (var i = 0; i < grid.length; i++) { var v = (Math.random() < prob) ? 1 : 0; grid[i] = v; live += v }
+        setStatus((running ? 'RUNNING' : 'PAUSED') + ' | grid:' + GRID_W + 'x' + GRID_H + ' | live:' + live);
+        return live;
+      }
 
-    if (!reformers.length && heartAlpha >= 0.999) {
-      shattered = false; heartAlpha = 1.0; cooling = false;
-      try {
-        if (audioBus.ctx && audioBus.master) {
-          const t = audioBus.ctx.currentTime; const g = audioBus.master.gain;
-          g.cancelScheduledValues(t); g.setTargetAtTime(audioBus.baseGain * 0.9, t, 0.05);
+      // ====== Neighborhood ======
+      function buildOffsets() {
+        var seen = new Set(), uniq = [];
+        activeKeys.forEach(function (lbl) {
+          var off = (ALIGN_MOORE && mooreMap[lbl]) ? mooreMap[lbl] : labelToOffset[lbl];
+          if (!off) return;
+          var dx = off.dx, dy = off.dy;
+          if (dx === 0 && dy === 0) return;
+          var k = dx + ',' + dy; if (!seen.has(k)) { seen.add(k); uniq.push([dx, dy]) }
+        });
+        return uniq;
+      }
+
+      // ====== UI status ======
+      var ruleEl = document.getElementById('rule');
+      var statusEl = document.getElementById('status');
+      function updateRuleLabel() {
+        var offs = buildOffsets();
+        var total = offs.length;
+        var baseCount = 0; baseLabels.forEach(function (lbl) { if (activeKeys.has(lbl)) baseCount++ });
+        var extra = Math.max(0, total - baseCount);
+        if (ruleEl) ruleEl.textContent = 'Rule  B[' + Bmin + '-' + Bmax + '] / S[' + Smin + '-' + Smax + ']   |   Neighbors: base ' + baseCount + ' + keys ' + extra + ' = ' + total + (ALIGN_MOORE ? '  [Aligned]' : '  [Physical]');
+        var bs = document.getElementById('bs');
+        if (bs) bs.textContent = 'B[' + Bmin + '-' + Bmax + ']  S[' + Smin + '-' + Smax + ']';
+        // sync picker UI
+        syncBoxes();
+      }
+      function setStatus(t) { if (statusEl) statusEl.textContent = t + ' | step:' + STEP_MS + 'ms | async:' + Math.round(ASYNC_RATE * 100) + '%' }
+      updateRuleLabel(); setStatus('PAUSED');
+
+      // ====== Step & Draw ======
+      function step() {
+        var offsets = buildOffsets(); var nlen = offsets.length;
+        for (var y = 0; y < GRID_H; y++) {
+          for (var x = 0; x < GRID_W; x++) {
+            if (Math.random() > ASYNC_RATE) { gridNext[idx(x, y)] = grid[idx(x, y)]; continue }
+            var cnt = 0; for (var i = 0; i < nlen; i++) { var nx = wrapX(x + offsets[i][0]), ny = wrapY(y + offsets[i][1]); cnt += grid[idx(nx, ny)] }
+            var alive = grid[idx(x, y)] === 1;
+            var born = (!alive) && (cnt >= Bmin && cnt <= Bmax) && (Math.random() < PBIRTH);
+            var stay = (alive) && (cnt >= Smin && cnt <= Smax) && (Math.random() < PSURV);
+            gridNext[idx(x, y)] = (born || stay) ? 1 : 0;
+          }
         }
-      } catch (e) { }
-    }
-  }
-
-  // ===== Main timing =====
-  let lastT = performance.now();
-  let acc = 0;
-
-  const COOL_BPM_TARGET = 70;
-
-  function frame(dt) {
-    const nowS = performance.now() / 1000;
-
-    if (shattered && (nowS - shatterTime) > (REFORM_DELAY_S + REFORM_DURATION_S + 0.6)) {
-      shattered = false; heartAlpha = 1.0; reformers.length = 0; cooling = false;
-    }
-
-    const since = lastKeyTime ? (performance.now() - lastKeyTime) : Infinity;
-    if (since > 40) emaIKI += (MAX_IKI - emaIKI) * (1 - Math.exp(-dt / IDLE_TAU));
-
-    const tRaw = (emaIKI - MIN_IKI) / (MAX_IKI - MIN_IKI);
-    const targetP = lmap(tRaw, 0, 1, FAST_PERIOD, REST_PERIOD);
-    currentPeriod += (targetP - currentPeriod) * (1 - Math.exp(-dt / PERIOD_TAU));
-
-    const fBreath = 1 / Math.max(0.03, currentPeriod);
-    phaseBreath += TAU * fBreath * dt; if (phaseBreath > 1e6) phaseBreath -= 1e6;
-
-    const heartPeriod = Math.max(0.03, currentPeriod * HEART_RATIO);
-    const fHeart = 1 / heartPeriod;
-    phaseHeart += TAU * fHeart * dt; if (phaseHeart > 1e6) phaseHeart -= 1e6;
-    heartAudio.setPeriod(heartPeriod);
-
-    const hbRaw = cardiacSeries(phaseHeart);
-    const HB_TAU = 0.12;
-    hbEnv += (hbRaw - hbEnv) * (1 - Math.exp(-dt / HB_TAU));
-
-    const tempoNormRaw = (fBreath - 1 / REST_PERIOD) / (1 / FAST_PERIOD - 1 / REST_PERIOD);
-    const tempoNorm = easeStep(clamp(tempoNormRaw, 0, 1), 0.35, 0.90);
-
-    if (cooling) {
-      const targetIKI = MAX_IKI * 1.8;
-      emaIKI += (targetIKI - emaIKI) * (1 - Math.exp(-dt / COOL_EXTRA_TAU_S));
-      heartAlpha = 0;
-
-      const bpmTmp = (1 / heartPeriod) * 60;
-      let audioSilenced = false;
-      try { audioSilenced = !!(audioBus.master && audioBus.master.gain.value <= 0.01); } catch (e) { audioSilenced = true; }
-      if (bpmTmp <= COOL_BPM_TARGET && audioSilenced && pendingTargets.length) {
-        const targets = pendingTargets.slice(); pendingTargets.length = 0;
-        for (let i = 0; i < targets.length; i++) {
-          const t = targets[i];
-          const side = Math.floor(Math.random() * 4);
-          let sx = 0, sy = 0;
-          if (side === 0) { sx = Math.random() * CW; sy = -30; }
-          else if (side === 1) { sx = CW + 30; sy = Math.random() * CH; }
-          else if (side === 2) { sx = Math.random() * CW; sy = CH + 30; }
-          else { sx = -30; sy = Math.random() * CH; }
-          const dx = t.sx - sx, dy = t.sy - sy; const dist = Math.hypot(dx, dy) || 1; const spd = 160 + Math.random() * 160;
-          const vx = dx / dist * spd, vy = dy / dist * spd; const size = 12 + Math.random() * 10; const ch = "*+=@#!%"[Math.floor(Math.random() * 7)] || "*";
-          reformers.push({ x: sx, y: sy, vx, vy, tx: t.sx, ty: t.sy, ch, size, life: REFORM_DELAY_S + REFORM_DURATION_S });
+        var tmp = grid; grid = gridNext; gridNext = tmp;
+      }
+      function draw() {
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cvs.width, cvs.height);
+        ctx.fillStyle = '#e6e6e6';
+        for (var y = 0; y < GRID_H; y++) {
+          for (var x = 0; x < GRID_W; x++) if (grid[idx(x, y)]) ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE)
         }
-        reformStartS = performance.now() / 1000;
-        cooling = false;
       }
-    }
 
-    // Camera & shape
-    const R0 = Math.min(CW, CH) * 0.36;
-    const R = R0 * (1.00 + 0.060 * hbEnv + 0.010 * Math.sin(phaseBreath - 0.4));
-    const camZ = R0 * 2.6;
-    const rotY = 0.16 * Math.sin(phaseBreath * 0.7);
-    const rotX = 0.14 * Math.sin(phaseBreath * 0.9 + 0.8);
-    const rotZ = 0.06 * Math.sin(phaseBreath * 0.5 - 0.3);
-    const waveA = 0.045 + 0.017 * hbEnv + 0.010 * (0.5 + 0.5 * Math.sin(phaseBreath));
-    const waveK1 = 3.0, waveK2 = 4.6; const wavePhase = 1.15 * phaseBreath + 0.45 * hbEnv;
-
-    const centerX = CW / 2, centerY = CH / 2;
-
-    // Background layer
-    btx.clearRect(0, 0, CW, CH);
-
-    if (!cooling && pendingChar) {
-      const speedBias = clamp(1 - (emaIKI - MIN_IKI) / (MAX_IKI - MIN_IKI), 0, 1);
-      const burst = 4 + Math.round(speedBias * 6);
-      spawnBgGlyphOutsideHeart(pendingChar, R, centerX, centerY, burst);
-      pendingChar = null;
-    } else {
-      pendingChar = null;
-    }
-
-    if (bgGlyphs.length) {
-      btx.save();
-      for (let i = bgGlyphs.length - 1; i >= 0; i--) {
-        const g = bgGlyphs[i];
-        g.x += g.vx * dt; g.y += g.vy * dt; g.life -= dt;
-        const a = clamp(g.life / 1.2, 0, 1);
-        if (a <= 0) { bgGlyphs.splice(i, 1); continue; }
-        btx.globalAlpha = a * 0.8;
-        btx.save();
-        btx.translate(g.x, g.y);
-        btx.rotate(g.rot);
-        btx.font = `${g.size}px "Courier New", Courier, ui-monospace, Menlo, Consolas, monospace`;
-        btx.fillStyle = `hsl(130 38% 45%)`;
-        btx.fillText(g.ch, 0, 0);
-        btx.restore();
+      // ====== Loop ======
+      var running = false, last = 0;
+      function loop(ts) {
+        if (running) { if (STEP_MS === 0 || ts - last >= STEP_MS) { step(); last = ts } draw(); requestAnimationFrame(loop) }
+        else { draw() }
       }
-      btx.restore();
-    }
+      draw();
+      function play() { if (!running) { running = true; setStatus('RUNNING'); requestAnimationFrame(loop) } }
+      function pause() { running = false; setStatus('PAUSED') }
 
-    // project points
-    const pts = [];
-    for (let k = 0; k < base.length; k++) {
-      const { th, ph, idx } = base[k];
-      let x = Math.sin(th) * Math.cos(ph);
-      let y = Math.cos(th);
-      let z = Math.sin(th) * Math.sin(ph);
-      const wv = waveA * (0.7 * Math.sin(waveK1 * th + wavePhase) + 0.5 * Math.sin(waveK2 * ph - 0.8 * wavePhase));
-      const rr = 1 + wv; x *= rr; y *= rr; z *= rr;
-      let X = x, Y = y, Z = z, c, s;
-      c = Math.cos(rotY); s = Math.sin(rotY); let x1 = c * X + s * Z, z1 = -s * X + c * Z; X = x1; Z = z1;
-      c = Math.cos(rotX); s = Math.sin(rotX); let y1 = c * Y - s * Z, z2 = s * Y + c * Z; Y = y1; Z = z2;
-      c = Math.cos(rotZ); s = Math.sin(rotZ); let x2 = c * X - s * Y, y2 = s * X + c * Y; X = x2; Y = y2;
-      const zc = Z * R, f = camZ / (camZ - zc);
-      const sx = centerX + X * R * f, sy = centerY + Y * R * f;
-      pts.push({ sx, sy, f, Y, idx });
-    }
-    pts.sort((a, b) => a.f - b.f);
+      // ====== Input ======
+      function clamp(v, min, max) { return Math.max(min, Math.min(max, v)) }
+      function adjustRange(which, bound, delta) {
+        if (which === 'B') {
+          if (bound === 'min') { Bmin = clamp(Bmin + delta, 0, 32); if (Bmin > Bmax) Bmax = Bmin }
+          else { Bmax = clamp(Bmax + delta, 0, 32); if (Bmax < Bmin) Bmin = Bmax }
+        } else {
+          if (bound === 'min') { Smin = clamp(Smin + delta, 0, 32); if (Smin > Smax) Smax = Smin }
+          else { Smax = clamp(Smax + delta, 0, 32); if (Smax < Smin) Smin = Smax }
+        }
+        updateRuleLabel();
+      }
 
-    // draw heart
-    btx.save();
-    btx.globalAlpha = (shattered ? heartAlpha : 1.0) * 0.85;
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i];
-      const facing = clamp((p.f - 0.8) / 0.6, 0, 1);
-      const ripple = 0.5 + 0.5 * Math.sin(5.6 * (p.sx * 0.002 + p.sy * 0.002) + 1.0 * phaseBreath);
-      const intensity = clamp(0.40 + 0.45 * facing + 0.22 * ripple, 0, 1);
-      const h = hash01(p.idx);
-      const L = clamp(28 + 22 * intensity, 20, 62);
-      const color = `hsl(130 92% ${L.toFixed(0)}%)`;
-      setBucketFontFromF(p.f); btx.fillStyle = color;
-      const ch = pickHeartChar(intensity, clamp(tempoNormRaw, 0, 1), h);
-      btx.fillText(ch, p.sx, p.sy);
-    }
-    btx.restore();
+      window.addEventListener('keydown', function (e) {
+        if ((['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter', '-', '='].indexOf(e.key) !== -1)) e.preventDefault();
 
-    const bpm = (1 / heartPeriod) * 60;
-    if (!shattered && bpm >= EXPLODE_BPM) explode(centerX, centerY, pts);
+        if (e.key === ' ') { running ? pause() : play(); return }
+        if (e.key === 'Enter') { randomizeGrid(RESEED_PROB); draw(); return }
 
-    updateAndDrawDebris(dt);
-    if (shattered) updateAndDrawReformers(dt, nowS);
+        // Shift+R: reset to Conway
+        if ((e.key === 'R' || e.key === 'r') && e.shiftKey) { resetToConway(); return }
 
-    // compose
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH);
-    ctx.drawImage(buf, 0, 0);
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.filter = 'blur(22px)'; ctx.globalAlpha = 0.08 + 0.22 * hbEnv; ctx.drawImage(buf, 0, 0);
-    ctx.filter = 'blur(10px)'; ctx.globalAlpha = 0.05 + 0.15 * hbEnv; ctx.drawImage(buf, 0, 0);
-    ctx.restore();
+        // Speed
+        if (e.key === '-') { STEP_MS = Math.min(1000, STEP_MS + 40); setStatus(running ? 'RUNNING' : 'PAUSED'); return }
+        if (e.key === '=') { STEP_MS = Math.max(0, STEP_MS - 40); setStatus(running ? 'RUNNING' : 'PAUSED'); return }
 
-    const label = shattered
-      ? (cooling ? `cooling… · ${bpm.toFixed(0)} bpm` : `reforming… · ${bpm.toFixed(0)} bpm`)
-      : `breath ${(1 / Math.max(0.03, currentPeriod)).toFixed(2)} Hz · ${bpm.toFixed(0)} bpm`;
-    hud.textContent = label;
-  }
+        // Physical-key toggle
+        var lbl = codeToLabel[e.code];
+        if (lbl) { if (lbl === CENTER_LABEL) return; toggleLabel(lbl); return }
+      }, { passive: false });
 
-  function loop() {
-    const now = performance.now();
-    let dt = (now - lastT) / 1000; lastT = now; if (dt > 0.2) dt = 0.2; acc += dt;
-    while (!paused && acc >= 1 / 60) { frame(1 / 60); acc -= 1 / 60; }
-    requestAnimationFrame(loop);
-  }
+      // ====== Range boxes (number inputs) ======
+      function $(id) { return document.getElementById(id) }
+      function clamp01(v) { v |= 0; if (v < 0) v = 0; if (v > 8) v = 8; return v }
+      function fixBounds() { if (Bmin > Bmax) Bmax = Bmin; if (Smin > Smax) Smax = Smin }
+      function syncBoxes() { var bm = $('bmin'), bx = $('bmax'), sm = $('smin'), sx = $('smax'); if (bm) bm.value = Bmin; if (bx) bx.value = Bmax; if (sm) sm.value = Smin; if (sx) sx.value = Smax }
+      function bindBoxes() {
+        var bm = $('bmin'), bx = $('bmax'), sm = $('smin'), sx = $('smax');
+        function on(e) {
+          var t = e.target; var id = t.id; var v = clamp01(parseInt(t.value, 10) || 0);
+          if (id === 'bmin') Bmin = v; else if (id === 'bmax') Bmax = v; else if (id === 'smin') Smin = v; else if (id === 'smax') Smax = v;
+          fixBounds(); syncBoxes(); updateRuleLabel(); if (!running) draw();
+        }
+        ;[bm, bx, sm, sx].forEach(function (inp) { if (inp) { inp.addEventListener('input', on); inp.addEventListener('change', on); } });
+        syncBoxes();
+      }
+      bindBoxes();
 
-  // ---- start ----
-  fit(); loop();
-</script>
+      // ====== Self tests (press 'T') ======
+      var testsEl = document.getElementById('tests');
+      function assert(name, cond) { return { name: name, ok: !!cond } }
+      function runTests() {
+        var wasRunning = running; if (wasRunning) pause();
+        var results = [];
+        results.push(assert('GRID defined', GRID_W > 0 && GRID_H > 0));
+        results.push(assert('Arrays sized', grid.length === GRID_W * GRID_H));
+
+        var total0 = buildOffsets().length;
+        results.push(assert('Default neighbors == 8 (Conway-equivalent)', total0 === 8));
+
+        if (ALIGN_MOORE) {
+          var offs = buildOffsets();
+          var want = BASE_OFFSETS.map(function (p) { return p[0] + ',' + p[1] }).sort().join('|');
+          var got = offs.map(function (p) { return p[0] + ',' + p[1] }).sort().join('|');
+          results.push(assert('Exact Moore mapping when aligned', want === got));
+        }
+
+        results.push(assert('BASE_OFFSETS defined (8)', Array.isArray(BASE_OFFSETS) && BASE_OFFSETS.length === 8));
+        results.push(assert('Base labels mapped (8)', (function () { computeBaseLabels(); return baseLabels.size === 8 })()));
+        results.push(assert('Key code mapping r,c', codeToLabel['KeyR'] === 'r' && codeToLabel['KeyC'] === 'c'));
+
+        results.push(assert("'g' not toggleable", (function () { var b = buildOffsets().length; toggleLabel('g'); var a = buildOffsets().length; return b === a && !activeKeys.has('g') })()));
+
+        var beforeN = buildOffsets().length; toggleLabel('r'); var afterN = buildOffsets().length; toggleLabel('r');
+        results.push(assert('Toggle changes neighbor count', beforeN !== afterN));
+
+        results.push(assert('Offsets exclude center (0,0)', (function () { var o = buildOffsets(); for (var i = 0; i < o.length; i++) { if (o[i][0] === 0 && o[i][1] === 0) return false } return true })()));
+
+        var snapshot = grid.slice();
+        var n0 = randomizeGrid(0); results.push(assert('randomizeGrid(0) == 0', n0 === 0));
+        var n1 = randomizeGrid(1); results.push(assert('randomizeGrid(1) == W*H', n1 === GRID_W * GRID_H));
+        grid.set(snapshot);
+
+        results.push(assert('INIT_PROB > RESEED_PROB', INIT_PROB > RESEED_PROB));
+
+        // Keyboard grid & picker
+        results.push(assert('Keyboard has 30 keys', document.querySelectorAll('#kbd .key').length === 30));
+        var oldBmin = Bmin, oldBmax = Bmax, oldSmin = Smin, oldSmax = Smax;
+        // simulate boxes set
+        Bmin = 2; Bmax = 5; Smin = 1; Smax = 4; syncBoxes(); updateRuleLabel();
+        var okB = (document.getElementById('bmin').value === '2' && document.getElementById('bmax').value === '5');
+        var okS = (document.getElementById('smin').value === '1' && document.getElementById('smax').value === '4');
+        results.push(assert('Boxes reflect B range', okB));
+        results.push(assert('Boxes reflect S range', okS));
+        // restore
+        Bmin = oldBmin; Bmax = oldBmax; Smin = oldSmin; Smax = oldSmax; syncBoxes(); updateRuleLabel();
+
+        var summary = results.map(function (r) { return (r.ok ? '- OK: ' : '- FAIL: ') + r.name }).join('\n');
+        if (testsEl) testsEl.textContent = 'Tests (T):\n' + summary;
+        if (wasRunning) play(); else draw();
+      }
+      window.addEventListener('keydown', function (e) { if (e.key && e.key.toLowerCase() === 't') { e.preventDefault(); runTests() } });
+
+      // ====== Resize & fit canvas ======
+      function resizeCanvas() {
+        var left = document.getElementById('left');
+        var footer = document.getElementById('footer');
+        var gap = 12, pad = 12;
+        var availW = window.innerWidth - pad * 2;
+        var availH = window.innerHeight - pad * 2;
+        var footerH = footer ? footer.offsetHeight : 0;
+        var leftH = Math.max(200, availH - footerH - gap);
+        left.style.height = leftH + 'px';
+        left.style.minHeight = leftH + 'px';
+
+        var panelPad = 20, panelGap = 10;
+        var titleEl = left.querySelector('.title');
+        var rowEl = left.querySelector('.row');
+        var testsTopEl = left.querySelector('#testsTop');
+        var childrenHeights = 0;
+        function vis(el) { return !!(el && el.offsetParent !== null) }
+        if (vis(titleEl)) childrenHeights += titleEl.offsetHeight || 0;
+        if (vis(rowEl)) childrenHeights += rowEl.offsetHeight || 0;
+        if (vis(testsTopEl)) childrenHeights += testsTopEl.offsetHeight || 0;
+        var visibleCount = 0;['.title', '#ca', '.row', '#testsTop'].forEach(function (sel) { var el = left.querySelector(sel); if (el && (el.offsetParent !== null || sel === '#ca')) visibleCount++ });
+        var gapsTotal = Math.max(0, (visibleCount - 1)) * panelGap;
+
+        var canvasH = Math.max(100, leftH - panelPad - childrenHeights - gapsTotal);
+        var canvasW = Math.max(200, availW);
+        cvs.width = canvasW | 0; cvs.height = canvasH | 0;
+        GRID_W = Math.floor(cvs.width / CELL_SIZE); GRID_H = Math.floor(cvs.height / CELL_SIZE);
+        grid = new Uint8Array(GRID_W * GRID_H); gridNext = new Uint8Array(GRID_W * GRID_H);
+        randomizeGrid(INIT_PROB); draw();
+      }
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+    })();
+  </script>
+</body>
+
+</html>
